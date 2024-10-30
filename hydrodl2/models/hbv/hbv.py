@@ -1,23 +1,16 @@
-from sympy import Q
 import torch
-from models.pet_models.potet import get_potet
-import torch.nn.functional as F
-from core.calc.hydrograph import UH_gamma, UH_conv
-from core.utils.utils import change_param_range, param_bounds_2D
-
+from core.calc.uh_routing import UH_gamma, UH_conv
+from core.utils import change_param_range
 
 
 
 class HBVMulTDET(torch.nn.Module):
-    """
-    Multi-component HBV Model Pytorch version (dynamic and static param capable) adapted from
-    dPL_Hydro_SNTEMP @ Farshid Rahmani.
+    """ Multi-component Pytorch HBV Model.
 
-    Supports optional Evapotranspiration parameter ET.
+    Adapted from Farshid Rahmani, Yalan Song.
 
-    Modified from the original numpy version from Beck et al., 2020
-    (http://www.gloh2o.org/hbv/), which runs the HBV-light hydrological model
-    (Seibert, 2005).
+    Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
+    which runs the HBV-light hydrological model (Seibert, 2005).
     """
     def __init__(self, config):
         super(HBVMulTDET, self).__init__()
@@ -118,38 +111,17 @@ class HBVMulTDET(torch.nn.Module):
 
         vars = config['observations']['var_t_hydro_model']  # Forcing var names
         vars_c = config['observations']['var_c_hydro_model']  # Attribute var names
+        
+        # Forcings
         P = x_hydro_model[warm_up:, :, vars.index('prcp(mm/day)')]  # Precipitation
         T = x_hydro_model[warm_up:, :, vars.index('tmean(C)')]  # Mean air temp
+        PET = x_hydro_model[warm_up:, :, vars.index(config['pet_dataset_name'])] # Potential ET
 
         # Expand dims to accomodate for nmul models.
         Pm = P.unsqueeze(2).repeat(1, 1, nmul)
         Tm = T.unsqueeze(2).repeat(1, 1, nmul)
-
-        # Get PET data.
-        if config['pet_module'] == 'potet_hamon':
-            # PET_coef = self.param_bounds_2D(PET_coef, 0, bounds=[0.004, 0.008], ndays=No_days, nmul=config['nmul'])
-            # PET = get_potet(
-            #     config=config, mean_air_temp=Tm, dayl=dayl, hamon_coef=PET_coef
-            # )  # mm/day
-            raise NotImplementedError
-
-        elif config['pet_module'] == 'potet_hargreaves':
-            day_of_year = x_hydro_model[warm_up:, :, vars.index('dayofyear')].unsqueeze(-1).repeat(1, 1, nmul)
-            lat = c_hydro_model[:, vars_c.index('lat')].unsqueeze(0).unsqueeze(-1).repeat(day_of_year.shape[0], 1, nmul)
-            Tmaxf = x_hydro_model[warm_up:, :, vars.index('tmax(C)')].unsqueeze(2).repeat(1, 1, nmul)
-            Tminf = x_hydro_model[warm_up:, :, vars.index('tmin(C)')].unsqueeze(2).repeat(1, 1, nmul)
-
-            # AET = PET_coef * PET 
-            # PET_coef converts PET to Actual ET.
-            PET = get_potet(config=config, tmin=Tminf, tmax=Tmaxf, tmean=Tm, lat=lat,
-                            day_of_year=day_of_year)
-
-        elif config['pet_module'] == 'dataset':
-            # AET = PET_coef * PET
-            # PET_coef converts PET to Actual ET
-            PET = x_hydro_model[warm_up:, :, vars.index(config['pet_dataset_name'])]
-
         PETm = PET.unsqueeze(-1).repeat(1, 1, nmul)
+
         Nstep, Ngrid = P.size()
 
         # Apply correction factor to precipitation
