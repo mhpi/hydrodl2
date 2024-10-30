@@ -31,24 +31,24 @@ We request all changes to this repo be made through a fork and PR.
 
 ## Repository Structure:
 
-hydrodl2/
-├── models/                    # Shared models directory
-│   ├── __init__.py            # Initializer
-│   ├── hbv/                   # HBV models
-│   └── prms/                  # Marrmot PRMS models
-├── src/
-│   ├── api/                   # Main API code
-│   │   ├── __init__.py        
-│   │   ├── _version.py        
-│   │   ├── config.py          
-│   │   ├── methods.py         # Methods exposed to end-users
-│   │   └── utils/             # Helper functions
-│   └── core/                  # Core utilities.
-├── tests/                     # Test suite for API and models
-│   ├── __init__.py            
-│   └── test_models.py         # Tests for models    
-├── .gitignore                 
-├── LICENSE
-├── mkdocs.yml
-├── pyproject.toml             
-└── README.md                  
+    hydrodl2/
+    ├── models/                    # Shared models directory
+    │   ├── __init__.py            # Initializer
+    │   ├── hbv/                   # HBV models
+    │   └── prms/                  # Marrmot PRMS models
+    ├── src/
+    │   ├── api/                   # Main API code
+    │   │   ├── __init__.py        
+    │   │   ├── _version.py        
+    │   │   ├── config.py          
+    │   │   ├── methods.py         # Methods exposed to end-users
+    │   │   └── utils/             # Helper functions
+    │   └── core/                  # Core utilities.
+    ├── tests/                     # Test suite for API and models
+    │   ├── __init__.py            
+    │   └── test_models.py         # Tests for models    
+    ├── .gitignore                 
+    ├── LICENSE
+    ├── mkdocs.yml
+    ├── pyproject.toml             
+    └── README.md                      
