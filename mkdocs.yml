@@ -1,0 +1,4 @@
+site_name: Hydro_Data_Dev
+site_url: https://mhpi.github.io/hydro_data_dev
+theme:
+  name: material
