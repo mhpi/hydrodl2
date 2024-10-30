@@ -4,6 +4,8 @@ import torch.nn.functional as F
 
 
 def UH_gamma(a, b, lenF=10):
+    """ TODO: Revise"""
+
     # UH. a [time (same all time steps), batch, var]
     m = a.shape
     lenF = min(a.shape[0], lenF)
@@ -22,6 +24,8 @@ def UH_gamma(a, b, lenF=10):
 
 def UH_conv(x, UH, viewmode=1):
     """
+    TODO: Revise
+    
     UH is a vector indicating the unit hydrograph
     the convolved dimension will be the last dimension
     UH convolution is
@@ -53,6 +57,8 @@ def UH_conv(x, UH, viewmode=1):
 
 
 def source_flow_calculation(config, flow_out, c_NN, after_routing=True):
+    """ TODO: Revise"""
+
     varC_NN = config['var_c_nn']
     if 'DRAIN_SQKM' in varC_NN:
         area_name = 'DRAIN_SQKM'

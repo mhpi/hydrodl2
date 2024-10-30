@@ -1,219 +1,45 @@
-import math
-import pandas as pd
 import torch
-import torch.nn.functional as F
-from models.pet_models.potet import get_potet
+from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
+from hydroDL2.core.utils import change_param_range
 
 
-class prms_marrmot(torch.nn.Module):
-    """
-    MARRMOT PRMS Model Pytorch version (dynamic and static param capable) from dPL_Hydro_SNTEMP @ Farshid Rahmani.
+
+class PRMS(torch.nn.Module):
+    """ Multi-component Pytorch PRMS model.
+
+    Adapted from Farshid Rahmani.
     """
     def __init__(self):
-        super(prms_marrmot, self).__init__()
+        super(PRMS, self).__init__()
         self.sigmoid = torch.nn.Sigmoid()
-        self.parameters_bound = dict(tt=[-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
-                                     ddf=[0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
-                                     alpha=[0, 1],     # alpha, Fraction of rainfall on soil moisture going to interception [-]
-                                     beta=[0, 1],    # beta, Fraction of catchment where rain goes to soil moisture [-]
-                                     stor=[0, 5],    # stor, Maximum interception capcity [mm]
-                                     retip=[0, 50],    # retip, Maximum impervious area storage [mm]
-                                     fscn=[0, 1],    # fscn, Fraction of SCX where SCN is located [-]
-                                     scx=[0, 1],    # scx, Maximum contributing fraction area to saturation excess flow [-]
-                                     flz=[0.005, 0.995],    # flz, Fraction of total soil moisture that is the lower zone [-]
-                                     stot=[1, 2000],    # stot, Total soil moisture storage [mm]: REMX+SMAX
-                                     cgw=[0, 20],    # cgw, Constant drainage to deep groundwater [mm/d]
-                                     resmax=[1, 300],    # resmax, Maximum flow routing reservoir storage (used for scaling only, there is no overflow) [mm]
-                                     k1=[0, 1],    # k1, Groundwater drainage coefficient [d-1]
-                                     k2=[1, 5],    # k2, Groundwater drainage non-linearity [-]
-                                     k3=[0, 1],    # k3, Interflow coefficient 1 [d-1]
-                                     k4=[0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
-                                     k5=[0, 1],    # k5, Baseflow coefficient [d-1]
-                                     k6=[0, 1],    # k6, Groundwater sink coefficient [d-1],
-                                     )
+        self.parameters_bound = dict(
+            tt=[-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
+            ddf=[0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
+            alpha=[0, 1],     # alpha, Fraction of rainfall on soil moisture going to interception [-]
+            beta=[0, 1],    # beta, Fraction of catchment where rain goes to soil moisture [-]
+            stor=[0, 5],    # stor, Maximum interception capcity [mm]
+            retip=[0, 50],    # retip, Maximum impervious area storage [mm]
+            fscn=[0, 1],    # fscn, Fraction of SCX where SCN is located [-]
+            scx=[0, 1],    # scx, Maximum contributing fraction area to saturation excess flow [-]
+            flz=[0.005, 0.995],    # flz, Fraction of total soil moisture that is the lower zone [-]
+            stot=[1, 2000],    # stot, Total soil moisture storage [mm]: REMX+SMAX
+            cgw=[0, 20],    # cgw, Constant drainage to deep groundwater [mm/d]
+            resmax=[1, 300],    # resmax, Maximum flow routing reservoir storage (used for scaling only, there is no overflow) [mm]
+            k1=[0, 1],    # k1, Groundwater drainage coefficient [d-1]
+            k2=[1, 5],    # k2, Groundwater drainage non-linearity [-]
+            k3=[0, 1],    # k3, Interflow coefficient 1 [d-1]
+            k4=[0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
+            k5=[0, 1],    # k5, Baseflow coefficient [d-1]
+            k6=[0, 1],    # k6, Groundwater sink coefficient [d-1],
+        )
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b
         ]
-        # PET_coef for converting PET to AET (added by Farshid)
+        # PET_coef for converting PET to AET (Farshid).
         self.PET_coef_bound = [
             [0.01, 1]
         ]
-
-    def source_flow_calculation(self, config, flow_out, c_NN, after_routing=True):
-        varC_NN = config["var_c_nn"]
-        if "DRAIN_SQKM" in varC_NN:
-            area_name = "DRAIN_SQKM"
-        elif "area_gages2" in varC_NN:
-            area_name = "area_gages2"
-        else:
-            print("area of basins are not available among attributes dataset")
-        area = c_NN[:, varC_NN.index(area_name)].unsqueeze(0).unsqueeze(-1).repeat(
-            flow_out["flow_sim"].shape[
-                0], 1, 1)
-        # flow calculation. converting mm/day to m3/sec
-        if after_routing == True:
-            srflow = (1000 / 86400) * area * (flow_out["srflow"]).repeat(1, 1, config["nmul"])  # Q_t - gw - ss
-            ssflow = (1000 / 86400) * area * (flow_out["ssflow"]).repeat(1, 1, config["nmul"])  # ras
-            gwflow = (1000 / 86400) * area * (flow_out["gwflow"]).repeat(1, 1, config["nmul"])
-        else:
-            srflow = (1000 / 86400) * area * (flow_out["srflow_no_rout"]).repeat(1, 1, config["nmul"])  # Q_t - gw - ss
-            ssflow = (1000 / 86400) * area * (flow_out["ssflow_no_rout"]).repeat(1, 1, config["nmul"])  # ras
-            gwflow = (1000 / 86400) * area * (flow_out["gwflow_no_rout"]).repeat(1, 1, config["nmul"])
-        # srflow = torch.clamp(srflow, min=0.0)  # to remove the small negative values
-        # ssflow = torch.clamp(ssflow, min=0.0)
-        # gwflow = torch.clamp(gwflow, min=0.0)
-        return srflow, ssflow, gwflow
-    def multi_comp_semi_static_params(
-        self, params, param_no, config, interval=30, method="average"
-    ):
-        # seperate the piece for each interval
-        nmul = config["nmul"]
-        param = params[:, :, param_no * nmul : (param_no + 1) * nmul]
-        no_basins, no_days = param.shape[0], param.shape[1]
-        interval_no = math.floor(no_days / interval)
-        remainder = no_days % interval
-        param_name_list = list()
-        if method == "average":
-            for i in range(interval_no):
-                if (remainder != 0) & (i == 0):
-                    param00 = torch.mean(
-                        param[:, 0:remainder, :], 1, keepdim=True
-                    ).repeat((1, remainder, 1))
-                    param_name_list.append(param00)
-                param_name = "param" + str(i)
-                param_name = torch.mean(
-                    param[
-                        :,
-                        ((i * interval) + remainder) : (
-                            ((i + 1) * interval) + remainder
-                        ),
-                        :,
-                    ],
-                    1,
-                    keepdim=True,
-                ).repeat((1, interval, 1))
-                param_name_list.append(param_name)
-        elif method == "single_val":
-            for i in range(interval_no):
-                if (remainder != 0) & (i == 0):
-                    param00 = (param[:, 0:1, :]).repeat((1, remainder, 1))
-                    param_name_list.append(param00)
-                param_name = "param" + str(i)
-                param_name = (
-                    param[
-                        :,
-                        (((i) * interval) + remainder) : (((i) * interval) + remainder)
-                        + 1,
-                        :,
-                    ]
-                ).repeat((1, interval, 1))
-                param_name_list.append(param_name)
-        else:
-            print("this method is not defined yet in function semi_static_params")
-        new_param = torch.cat(param_name_list, 1)
-        return new_param
-
-    def param_bounds(self, params, num, config, bounds):
-        nmul = config["nmul"]
-        if num in config["static_params_list_prms"]:
-            out_temp = (
-                    params[:, -1, num * nmul: (num + 1) * nmul]
-                    * (bounds[1] - bounds[0])
-                    + bounds[0]
-            )
-            out = out_temp.repeat(1, params.shape[1]).reshape(
-                params.shape[0], params.shape[1], nmul
-            )
-
-        elif num in config["semi_static_params_list_prms"]:
-            out_temp = self.multi_comp_semi_static_params(
-                params,
-                num,
-                config,
-                interval=config["interval_for_semi_static_param_prms"][
-                    config["semi_static_params_list_prms"].index(num)
-                ],
-                method=config["method_for_semi_static_param_prms"][
-                    config["semi_static_params_list_prms"].index(num)
-                ],
-            )
-            out = (
-                    out_temp * (bounds[1] - bounds[0])
-                    + bounds[0]
-            )
-
-        else:  # dynamic
-            out = (
-                    params[:, :, num * nmul: (num + 1) * nmul]
-                    * (bounds[1] - bounds[0])
-                    + bounds[0]
-            )
-        return out
-
-
-    def UH_gamma(self, a, b, lenF=10):
-        # UH. a [time (same all time steps), batch, var]
-        m = a.shape
-        lenF = min(a.shape[0], lenF)
-        w = torch.zeros([lenF, m[1], m[2]])
-        aa = F.relu(a[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.1  # minimum 0.1. First dimension of a is repeat
-        theta = F.relu(b[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.5  # minimum 0.5
-        t = torch.arange(0.5, lenF * 1.0).view([lenF, 1, 1]).repeat([1, m[1], m[2]])
-        t = t.cuda(aa.device)
-        denom = (aa.lgamma().exp()) * (theta ** aa)
-        mid = t ** (aa - 1)
-        right = torch.exp(-t / theta)
-        w = 1 / denom * mid * right
-        w = w / w.sum(0)  # scale to 1 for each UH
-
-        return w
-
-    def UH_conv(self, x, UH, viewmode=1):
-        """
-        UH is a vector indicating the unit hydrograph
-        the convolved dimension will be the last dimension
-        UH convolution is
-        Q(t)=\integral(x(\tao)*UH(t-\tao))d\tao
-        conv1d does \integral(w(\tao)*x(t+\tao))d\tao
-        hence we flip the UH
-        https://programmer.group/pytorch-learning-conv1d-conv2d-and-conv3d.html
-        view
-
-        x: [batch, var, time]
-        UH:[batch, var, uhLen]
-        batch needs to be accommodated by channels and we make use of groups
-        https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
-        https://pytorch.org/docs/stable/nn.functional.html
-        """
-        mm = x.shape;
-        nb = mm[0]
-        m = UH.shape[-1]
-        padd = m - 1
-        if viewmode == 1:
-            xx = x.view([1, nb, mm[-1]])
-            w = UH.view([nb, 1, m])
-            groups = nb
-
-        y = F.conv1d(xx, torch.flip(w, [2]), groups=groups, padding=padd, stride=1, bias=None)
-        if padd != 0:
-            y = y[:, :, 0:-padd]
-        return y.view(mm)
-
-    def param_bounds_2D(self, params, num, bounds, ndays, nmul):
-        out_temp = (
-                params[:, num * nmul: (num + 1) * nmul]
-                * (bounds[1] - bounds[0])
-                + bounds[0]
-        )
-        out = out_temp.unsqueeze(0).repeat(ndays, 1, 1).reshape(
-            ndays, params.shape[0], nmul
-        )
-        return out
-
-    def change_param_range(self, param, bounds):
-        out = param * (bounds[1] - bounds[0]) + bounds[0]
-        return out
 
     def forward(self, x_hydro_model, c_hydro_model, params_raw, config, static_idx=-1,
                 warm_up=0, init=False, routing=False, conv_params_hydro=None):
@@ -229,7 +55,7 @@ class prms_marrmot(torch.nn.Module):
                 xinit = x_hydro_model[0:warm_up, :, :]
                 # paramsinit = params[:, :warm_up, :]
                 # PET_coefinit = PET_coef[:, :warm_up, :]
-                initmodel = prms_marrmot().to(config["device"])
+                initmodel = PRMS().to(config["device"])
                 Q_init, snow_storage, XIN_storage, RSTOR_storage, \
                     RECHR_storage, SMAV_storage, \
                     RES_storage, GW_storage = initmodel(
@@ -272,7 +98,7 @@ class prms_marrmot(torch.nn.Module):
         # Parameters
         params_dict_raw = dict()
         for num, param in enumerate(self.parameters_bound.keys()):
-            params_dict_raw[param] = self.change_param_range(
+            params_dict_raw[param] = change_param_range(
                 param=params_raw[:, :, num, :],
                 bounds=self.parameters_bound[param]
             )
@@ -286,36 +112,13 @@ class prms_marrmot(torch.nn.Module):
 
         P = x_hydro_model[warm_up:, :, vars.index('prcp(mm/day)')]  # Precipitation
         T = x_hydro_model[warm_up:, :, vars.index('tmean(C)')]  # Mean air temp
+        PET = x_hydro_model[warm_up:, :, vars.index(config['pet_dataset_name'])] # Potential ET
 
         # Expand dims to accomodate for nmul models.
         Pm = P.unsqueeze(2).repeat(1, 1, nmul)
         Tm = T.unsqueeze(2).repeat(1, 1, nmul)
-
-        # Get PET data.
-        if config['pet_module'] == 'potet_hamon':
-            # PET_coef = self.param_bounds_2D(PET_coef, 0, bounds=[0.004, 0.008], ndays=No_days, nmul=config['nmul'])
-            # PET = get_potet(
-            #     config=config, mean_air_temp=Tm, dayl=dayl, hamon_coef=PET_coef
-            # )  # mm/day
-            raise NotImplementedError
-
-        elif config['pet_module'] == 'potet_hargreaves':
-            day_of_year = x_hydro_model[warm_up:, :, vars.index('dayofyear')].unsqueeze(-1).repeat(1, 1, nmul)
-            lat = c_hydro_model[:, vars_c.index('lat')].unsqueeze(0).unsqueeze(-1).repeat(day_of_year.shape[0], 1, nmul)
-            Tmaxf = x_hydro_model[warm_up:, :, vars.index('tmax(C)')].unsqueeze(2).repeat(1, 1, nmul)
-            Tminf = x_hydro_model[warm_up:, :, vars.index('tmin(C)')].unsqueeze(2).repeat(1, 1, nmul)
-
-            # AET = PET_coef * PET 
-            # PET_coef converts PET to Actual ET.
-            PET = get_potet(config=config, tmin=Tminf, tmax=Tmaxf, tmean=Tm, lat=lat,
-                            day_of_year=day_of_year)
-
-        elif config['pet_module'] == 'dataset':
-            # AET = PET_coef * PET
-            # PET_coef converts PET to Actual ET
-            PET = x_hydro_model[warm_up:, :, vars.index(config['pet_dataset_name'])]
-
         PETm = PET.unsqueeze(-1).repeat(1, 1, nmul)
+
         Nstep, Ngrid = P.size()
 
         # AET = PET_coef * PET
@@ -459,33 +262,33 @@ class prms_marrmot(torch.nn.Module):
             qres_sim[t, :, :] = flux_qres
 
         if routing == True:
-            temp_a = self.change_param_range(
+            temp_a = change_param_range(
                 param=conv_params_hydro[:, 0],
                 bounds=self.conv_routing_hydro_model_bound[0]
             )
-            temp_b = self.change_param_range(
+            temp_b = change_param_range(
                 param=conv_params_hydro[:, 1],
                 bounds=self.conv_routing_hydro_model_bound[1]
             )
             rout_a = temp_a.repeat(Nstep, 1).unsqueeze(-1)
             rout_b = temp_b.repeat(Nstep, 1).unsqueeze(-1)
 
-            UH = self.UH_gamma(rout_a, rout_b, lenF=15)  # lenF: folter
+            UH = UH_gamma(rout_a, rout_b, lenF=15)  # lenF: folter
             rf = Q_sim.mean(-1, keepdim=True).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
-            Qsrout = self.UH_conv(rf, UH).permute([2, 0, 1])
+            Qsrout = UH_conv(rf, UH).permute([2, 0, 1])
 
             rf_sas = sas_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Qsas_rout = self.UH_conv(rf_sas, UH).permute([2, 0, 1])
+            Qsas_rout = UH_conv(rf_sas, UH).permute([2, 0, 1])
 
             rf_sro = sro_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Qsro_rout = self.UH_conv(rf_sro, UH).permute([2, 0, 1])
+            Qsro_rout = UH_conv(rf_sro, UH).permute([2, 0, 1])
 
             rf_ras = ras_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Qras_rout = self.UH_conv(rf_ras, UH).permute([2, 0, 1])
+            Qras_rout = UH_conv(rf_ras, UH).permute([2, 0, 1])
 
             rf_bas = bas_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Qbas_rout = self.UH_conv(rf_bas, UH).permute([2, 0, 1])
+            Qbas_rout = UH_conv(rf_bas, UH).permute([2, 0, 1])
 
         else:
             Qsrout = Q_sim.mean(-1, keepdim=True)

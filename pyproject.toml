@@ -3,7 +3,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling", "hatch-vcs"]
 
 [project]
-name = "hydroDL"
+name = "hydroDL2"
 description = "Hydrology models and modules manager"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
@@ -19,7 +19,6 @@ dependencies = [
     "torch",
     "numpy",
     "pandas",
-    "xarray",
 ]
 dynamic = ["version"]  # Add this line to indicate dynamic versioning
 
@@ -32,7 +31,7 @@ test = [
 
 [tool.hatch]
 version.source = "vcs"
-build.hooks.vcs.version-file = "src/hydrodl2/_version.py"
+build.hooks.vcs.version-file = "src/hydroDL2/_version.py"
 
 [tool.ruff]
 src = ["src"]

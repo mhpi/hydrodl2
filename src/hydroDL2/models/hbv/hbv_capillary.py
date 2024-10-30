@@ -1,11 +1,11 @@
 import torch
-from core.calc.uh_routing import UH_gamma, UH_conv
-from core.utils import change_param_range
+from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
+from hydroDL2.core.utils import change_param_range
 
 
 
 class HBVMulTDET(torch.nn.Module):
-    """ Multi-component Pytorch HBV Model with capillary rise mod.
+    """ Multi-component Pytorch HBV model with capillary rise mod.
 
     Adapted from Farshid Rahmani, Yalan Song.
 
@@ -14,21 +14,22 @@ class HBVMulTDET(torch.nn.Module):
     """
     def __init__(self):
         super(HBVMulTDET, self).__init__()
-        self.parameters_bound = dict(parBETA=[1.0, 6.0],
-                                     parFC=[50, 1000],
-                                     parK0=[0.05, 0.9],
-                                     parK1=[0.01, 0.5],
-                                     parK2=[0.001, 0.2],
-                                     parLP=[0.2, 1],
-                                     parPERC=[0, 10],
-                                     parUZL=[0, 100],
-                                     parTT=[-2.5, 2.5],
-                                     parCFMAX=[0.5, 10],
-                                     parCFR=[0, 0.1],
-                                     parCWH=[0, 0.2],
-                                     parBETAET=[0.3, 5],
-                                     parC=[0, 1]
-                                     )
+        self.parameters_bound = dict(
+            parBETA=[1.0, 6.0],
+            parFC=[50, 1000],
+            parK0=[0.05, 0.9],
+            parK1=[0.01, 0.5],
+            parK2=[0.001, 0.2],
+            parLP=[0.2, 1],
+            parPERC=[0, 10],
+            parUZL=[0, 100],
+            parTT=[-2.5, 2.5],
+            parCFMAX=[0.5, 10],
+            parCFR=[0, 0.1],
+            parCWH=[0, 0.2],
+            parBETAET=[0.3, 5],
+            parC=[0, 1]
+        )
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b

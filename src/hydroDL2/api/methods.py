@@ -1,9 +1,8 @@
-import json
-from pathlib import Path
-from typing import Any, List
+from typing import List
 from torch.nn import Module
 
 __all__ = ["get_models",  "load_model"]
+
 
 
 def get_models() -> List:
@@ -21,34 +20,23 @@ def get_models() -> List:
 def load_model(model: str) -> Module:
     """ Load a model from the database.
 
+    NOTE: this is hacked just so we can test hydro model imports within dMG
+    tutorials. Full implementation should be loader that is aware of all models
+    within the hydroDL2.models module and can load them dynamically.
+
     Parameters
     ----------
     model : str
         The name of the model to load.
     """
     if model == 'HBV':
-        from hydrodl2.models.hbv import HBV
-        return HBV
+        from hydroDL2.models.hbv import hbv
+        return hbv.HBVMulTDET
+    if model == 'HBV':
+        from hydroDL2.models.hbv import hbv_capillary
+        return hbv_capillary.HBVMulTDET
     elif model == 'PRMS':
-        from hydrodl2.models.prms import PRMS
-        return PRMS
+        from hydroDL2.models.prms import prms_marrmot
+        return prms_marrmot.PRMS
     else:
         raise ValueError(f"Model {model} not found.")
-
-
-def load_record(path: Path) -> Record:
-    """Load a record from a json file
-
-    Parameters
-    ----------
-    path : Path
-        The path to the json file
-
-    Returns
-    -------
-    Record
-        The record object
-    """
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    return Record(**data)

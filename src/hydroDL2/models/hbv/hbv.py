@@ -1,11 +1,11 @@
 import torch
-from core.calc.uh_routing import UH_gamma, UH_conv
-from core.utils import change_param_range
+from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
+from hydroDL2.core.utils import change_param_range
 
 
 
 class HBVMulTDET(torch.nn.Module):
-    """ Multi-component Pytorch HBV Model.
+    """ Multi-component Pytorch HBV model.
 
     Adapted from Farshid Rahmani, Yalan Song.
 
@@ -14,19 +14,20 @@ class HBVMulTDET(torch.nn.Module):
     """
     def __init__(self, config):
         super(HBVMulTDET, self).__init__()
-        self.parameters_bound = dict(parBETA=[1.0, 6.0],
-                                     parFC=[50, 1000],
-                                     parK0=[0.05, 0.9],
-                                     parK1=[0.01, 0.5],
-                                     parK2=[0.001, 0.2],
-                                     parLP=[0.2, 1],
-                                     parPERC=[0, 10],
-                                     parUZL=[0, 100],
-                                     parTT=[-2.5, 2.5],
-                                     parCFMAX=[0.5, 10],
-                                     parCFR=[0, 0.1],
-                                     parCWH=[0, 0.2]
-                                     )
+        self.parameters_bound = dict(
+            parBETA=[1.0, 6.0],
+            parFC=[50, 1000],
+            parK0=[0.05, 0.9],
+            parK1=[0.01, 0.5],
+            parK2=[0.001, 0.2],
+            parLP=[0.2, 1],
+            parPERC=[0, 10],
+            parUZL=[0, 100],
+            parTT=[-2.5, 2.5],
+            parCFMAX=[0.5, 10],
+            parCFR=[0, 0.1],
+            parCWH=[0, 0.2]
+        )
 
         if 'parBETAET' in config['dy_params']['HBV']:
             self.parameters_bound['parBETAET'] = [0.3, 5]
@@ -35,31 +36,6 @@ class HBVMulTDET(torch.nn.Module):
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b
         ]
-
-    def source_flow_calculation(self, config, flow_out, c_NN, after_routing=True):
-        varC_NN = config['var_c_nn']
-        if 'DRAIN_SQKM' in varC_NN:
-            area_name = 'DRAIN_SQKM'
-        elif 'area_gages2' in varC_NN:
-            area_name = 'area_gages2'
-        else:
-            print("area of basins are not available among attributes dataset")
-        area = c_NN[:, varC_NN.index(area_name)].unsqueeze(0).unsqueeze(-1).repeat(
-            flow_out['flow_sim'].shape[
-                0], 1, 1)
-        # flow calculation. converting mm/day to m3/sec
-        if after_routing == True:
-            srflow = (1000 / 86400) * area * (flow_out['srflow']).repeat(1, 1, config['nmul'])  # Q_t - gw - ss
-            ssflow = (1000 / 86400) * area * (flow_out['ssflow']).repeat(1, 1, config['nmul'])  # ras
-            gwflow = (1000 / 86400) * area * (flow_out['gwflow']).repeat(1, 1, config['nmul'])
-        else:
-            srflow = (1000 / 86400) * area * (flow_out['srflow_no_rout']).repeat(1, 1, config['nmul'])  # Q_t - gw - ss
-            ssflow = (1000 / 86400) * area * (flow_out['ssflow_no_rout']).repeat(1, 1, config['nmul'])  # ras
-            gwflow = (1000 / 86400) * area * (flow_out['gwflow_no_rout']).repeat(1, 1, config['nmul'])
-        # srflow = torch.clamp(srflow, min=0.0)  # to remove the small negative values
-        # ssflow = torch.clamp(ssflow, min=0.0)
-        # gwflow = torch.clamp(gwflow, min=0.0)
-        return srflow, ssflow, gwflow
 
     def forward(self, x_hydro_model, c_hydro_model, params_raw, config, static_idx=-1,
                 muwts=None, warm_up=0, init=False, routing=False, comprout=False,
