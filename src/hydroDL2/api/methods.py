@@ -32,7 +32,7 @@ def load_model(model: str) -> Module:
     if model == 'HBV':
         from hydroDL2.models.hbv import hbv
         return hbv.HBVMulTDET
-    if model == 'HBV':
+    if model == 'HBV_11p':
         from hydroDL2.models.hbv import hbv_capillary
         return hbv_capillary.HBVMulTDET
     elif model == 'PRMS':

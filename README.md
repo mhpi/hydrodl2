@@ -29,7 +29,7 @@ See Pyproject.toml for information.
 We request all changes to this repo be made through a fork and PR.
 
 
-## Repository Structure:
+### Repository Structure:
 
     .
     ├── src/

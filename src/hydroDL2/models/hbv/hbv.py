@@ -29,7 +29,7 @@ class HBVMulTDET(torch.nn.Module):
             parCWH=[0, 0.2]
         )
 
-        if 'parBETAET' in config['dy_params']['HBV']:
+        if 'parBETAET' in config['phy_model']['dy_params']['HBV']:
             self.parameters_bound['parBETAET'] = [0.3, 5]
 
         self.conv_routing_hydro_model_bound = [
@@ -37,11 +37,11 @@ class HBVMulTDET(torch.nn.Module):
             [0, 6.5]   # routing parameter b
         ]
 
-    def forward(self, x_hydro_model, c_hydro_model, params_raw, config, static_idx=-1,
+    def forward(self, x_hydro_model, params_raw, config, static_idx=-1,
                 muwts=None, warm_up=0, init=False, routing=False, comprout=False,
                 conv_params_hydro=None):
-        nearzero = config['nearzero']
-        nmul = config['nmul']
+        nearzero = config['dpl_model']['nearzero']
+        nmul = config['dpl_model']['nmul']
 
         # Initialization
         if warm_up > 0:
@@ -50,7 +50,6 @@ class HBVMulTDET(torch.nn.Module):
                 initmodel = HBVMulTDET(config).to(config['device'])
                 Qsinit, SNOWPACK, MELTWATER, SM, SUZ, SLZ = initmodel(
                     xinit,
-                    c_hydro_model,
                     params_raw,
                     config,
                     static_idx=warm_up-1,
@@ -83,15 +82,14 @@ class HBVMulTDET(torch.nn.Module):
             # Run all static for warmup.
             dy_params = []
         else:
-            dy_params = config['dy_params']['HBV']
+            dy_params = config['phy_model']['dy_params']['HBV']
 
-        vars = config['observations']['var_t_hydro_model']  # Forcing var names
-        vars_c = config['observations']['var_c_hydro_model']  # Attribute var names
+        vars = config['observations']['phy_forcings']  # Forcing var names
         
         # Forcings
-        P = x_hydro_model[warm_up:, :, vars.index('prcp(mm/day)')]  # Precipitation
-        T = x_hydro_model[warm_up:, :, vars.index('tmean(C)')]  # Mean air temp
-        PET = x_hydro_model[warm_up:, :, vars.index(config['pet_dataset_name'])] # Potential ET
+        P = x_hydro_model[warm_up:, :, vars.index('prcp')]  # Precipitation
+        T = x_hydro_model[warm_up:, :, vars.index('tmean')]  # Mean air temp
+        PET = x_hydro_model[warm_up:, :, vars.index('pet')] # Potential ET
 
         # Expand dims to accomodate for nmul models.
         Pm = P.unsqueeze(2).repeat(1, 1, nmul)
@@ -129,7 +127,7 @@ class HBVMulTDET(torch.nn.Module):
         # as static in some basins.)
         if len(dy_params) > 0:
             params_dict_raw_dy = dict()
-            pmat = torch.ones([Ngrid, 1]) * config['dy_drop']
+            pmat = torch.ones([Ngrid, 1]) * config['dpl_model']['dy_drop']
             for i, key in enumerate(dy_params):
                 drmask = torch.bernoulli(pmat).detach_().to(config['device'])
                 dynPar = params_dict_raw[key]
