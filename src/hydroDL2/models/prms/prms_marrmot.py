@@ -1,11 +1,11 @@
 import torch
 from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
-from hydroDL2.core.utils import change_param_range
+from hydroDL2.core.calc import change_param_range
 
 
 
 class PRMS(torch.nn.Module):
-    """ Multi-component Pytorch PRMS model.
+    """Multi-component Pytorch PRMS model.
 
     Adapted from Farshid Rahmani.
     """
