@@ -1,0 +1,70 @@
+defaults:
+    - _self_
+    - hydra: settings
+    - observations: camels_531  # camels_531, camels_671
+
+
+## General -------------------------------#
+mode: train  # train, test, train_test
+random_seed: 111111
+device: cuda
+gpu_id: 7
+
+name: dmg-1.0-${observations.name}
+save_path: /data/lgl5139/project_blue_eyes/generic_diffModel/runs 
+
+
+## Training -------------------------------#
+train:
+    start_time: 1999/10/01
+    end_time: 2008/10/01
+    target: [00060_Mean]
+    batch_size: 100
+    epochs: 50
+    save_epoch: 10
+    run_from_checkpoint: False
+    start_epoch: 0
+
+
+## Testing -------------------------------#
+test:
+    start_time: 1989/10/01
+    end_time: 1999/10/01
+    batch_size: 25
+    test_epoch: 50
+
+
+## dPL Model -------------------------------#
+dpl_model:
+    nmul: 16
+    nearzero: 1e-5
+    rho: 365
+    dy_drop: 0.0
+    
+phy_model:
+    models: [HBV]  # HBV, hbv_11p (1.1p), marrmot_PRMS, SACSMA_with_snow
+    warm_up: 365
+    stat_param_idx: -1
+    dy_params:
+        HBV: [parBETA, parBETAET]
+
+pnn_model:
+    model: LSTM  # LSTM, MLP
+    dropout: 0.5
+    hidden_size: 256
+    learning_rate: 1.0
+
+loss_function:
+    model: RmseLossFlowComb  # RmseLossFlowComb, NseLossBatchFlow
+    weights:
+        w1: 11.0
+        w2: 1.0
+
+
+
+## ------------------------------------------------#
+## Hydrology Config -------------------------------#
+routing_hydro_model: True
+use_log_norm: [prcp]  # For log normalization ('prcp' for HBV, [] otherwise)
+hbvcap_no_warm: False
+ensemble_type: none

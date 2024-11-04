@@ -1,5 +1,5 @@
 """
-Test API methods here.
+Test API methods.
 
 Tests will run with pytest when pushed to remote, and can also be run manually
 with:

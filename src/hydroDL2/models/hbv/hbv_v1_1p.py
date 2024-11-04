@@ -84,7 +84,7 @@ class HBVMulTDET(torch.nn.Module):
             # Run all static for warmup.
             dy_params = []
         else:
-            dy_params = config['phy_model']['dy_params']['HBV_11p']
+            dy_params = config['phy_model']['dy_params']['HBV_v1_1p']
 
         vars = config['observations']['phy_forcings']  # Forcing var names
 
