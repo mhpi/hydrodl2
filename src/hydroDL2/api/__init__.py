@@ -6,7 +6,8 @@ import os
 def get_model_dir() -> Path:
     """Get the path to the models directory.
 
-    This is function helps avoid path errors when debugging vs production work.
+    Using this helps avoid path errors when debugging vs. use as a package.
+
     Returns
     -------
     Path
@@ -17,5 +18,24 @@ def get_model_dir() -> Path:
     if not os.path.exists(dir):
         dir = Path(os.path.dirname(os.path.abspath(__file__)))
         dir = dir.parent / 'models'
+    
+    return dir
+
+
+def get_module_dir() -> Path:
+    """Get the path to the modules directory.
+
+    Using this helps avoid path errors when debugging vs. use as a package.
+
+    Returns
+    -------
+    Path
+        Module directory path.
+    """
+    dir = Path('./modules')
+
+    if not os.path.exists(dir):
+        dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        dir = dir.parent / 'modules'
     
     return dir

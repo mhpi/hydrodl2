@@ -10,5 +10,5 @@ We illustrate this with a hydrology model HBV v2, or `HBV_v2`.
 
 - The model file should only contain one model class. If you want to place multiple variants of your model in the same file, make sure to add a variant specification to your config and indicate
 with the `ver_name` flag when loading your model with `load_model()`. Otherwise, the first model listed in your file will be loaded by default.
-    - Unless changes between model variants are small, it would be encouraged to use a different file for each.
+    - Unless changes between model variants are small, it is encouraged to use a different file for each.
     

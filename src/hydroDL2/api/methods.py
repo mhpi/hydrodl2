@@ -1,28 +1,36 @@
+"""
+Note: If adding new public methods, please add them to __all__ 
+at the top of the file and in api/__init__.py.
+"""
+
 from typing import List, Dict
 from torch.nn import Module
 from pathlib import Path
 import importlib.util
 import os
 
-from hydroDL2.api import get_model_dir
+from hydroDL2.api import get_model_dir, get_module_dir
 from hydroDL2.core.utils import get_directories, get_files
 
-__all__ = ["available_models",  "load_model"]
+# List of all public-facing methods.
+__all__ = ['available_models',
+           'available_modules',
+           'load_model',
+           'load_module'
+           ]
 
 
 
 def available_models() -> Dict[str, List[str]]:
-    """Identify and list all available models in the database.
+    """Identify and list all available models in hydroDL2.
     
     Returns
     -------
-    models : List
-        A list of all available models in the database.
+    List
+        A list of available models.
     """
     # Path to the models directory
     model_dir = get_model_dir()
-
-    dirs = []
     models = {}
 
     dirs, _ = get_directories(model_dir)
@@ -31,6 +39,46 @@ def available_models() -> Dict[str, List[str]]:
         models[dir.name] = file_names
     
     return models
+
+
+def _list_available_models() -> List[str]:
+    """List all available models in hydroDL2 without the dict nesting
+    of available_models().
+        
+    Returns
+    -------
+    List
+        A list of available models.
+    """
+    model_dir = get_model_dir()
+    models = []
+
+    dirs, _ = get_directories(model_dir)
+    for dir in dirs:
+        _, file_names = get_files(dir)
+        for file in file_names:
+            models.append(file)    
+    return models
+
+
+def available_modules() -> Dict[str, List[str]]:
+    """Identify and list all available modules in the hydroDL2.
+    
+    Returns
+    -------
+    List
+        A list of available modules.
+    """
+    # Path to the modules directory
+    model_dir = get_module_dir()
+    modules = {}
+
+    dirs, _ = get_directories(model_dir)
+    for dir in dirs:
+        _, file_names = get_files(dir)
+        modules[dir.name] = file_names
+    
+    return modules
 
 
 def load_model(model: str, ver_name: str = None) -> Module:
@@ -79,3 +127,8 @@ def load_model(model: str, ver_name: str = None) -> Module:
         cls = getattr(module, classes[0])
     
     return cls
+
+
+def load_module():
+    """Load a module from the modules directory."""
+    raise NotImplementedError("This function is not yet implemented.")
