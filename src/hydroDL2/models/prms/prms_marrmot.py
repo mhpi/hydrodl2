@@ -1,11 +1,11 @@
 import torch
-from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
-from hydroDL2.core.utils import change_param_range
 
+from hydroDL2.core.calc import change_param_range
+from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
 class PRMS(torch.nn.Module):
-    """ Multi-component Pytorch PRMS model.
+    """Multi-component Pytorch PRMS model.
 
     Adapted from Farshid Rahmani.
     """
@@ -41,13 +41,12 @@ class PRMS(torch.nn.Module):
             [0.01, 1]
         ]
 
-    def forward(self, x_hydro_model, c_hydro_model, params_raw, config, static_idx=-1,
+    def forward(self, x_hydro_model, params_raw, config, static_idx=-1,
                 warm_up=0, init=False, routing=False, conv_params_hydro=None):
         nearzero = config['nearzero']
         nmul = config['nmul']
 
         vars = config['observations']["var_t_hydro_model"]
-        vars_c = config['observations']["var_c_hydro_model"]
 
         # Initialization
         if warm_up > 0:
@@ -60,7 +59,6 @@ class PRMS(torch.nn.Module):
                     RECHR_storage, SMAV_storage, \
                     RES_storage, GW_storage = initmodel(
                         xinit,
-                        c_hydro_model,
                         params_raw,
                         config,
                         static_idx=warm_up-1,
@@ -110,9 +108,9 @@ class PRMS(torch.nn.Module):
         else:
             dy_params = config['dy_params']['marrmot_PRMS']
 
-        P = x_hydro_model[warm_up:, :, vars.index('prcp(mm/day)')]  # Precipitation
-        T = x_hydro_model[warm_up:, :, vars.index('tmean(C)')]  # Mean air temp
-        PET = x_hydro_model[warm_up:, :, vars.index(config['pet_dataset_name'])] # Potential ET
+        P = x_hydro_model[warm_up:, :, vars.index('prcp')]  # Precipitation
+        T = x_hydro_model[warm_up:, :, vars.index('tmean')]  # Mean air temp
+        PET = x_hydro_model[warm_up:, :, vars.index('pet')] # Potential ET
 
         # Expand dims to accomodate for nmul models.
         Pm = P.unsqueeze(2).repeat(1, 1, nmul)

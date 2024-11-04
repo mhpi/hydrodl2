@@ -1,39 +1,64 @@
-import torch
-from typing import List
+import os
+from pathlib import Path
+from typing import List, Union
 
-def change_param_range(param: torch.Tensor, bounds: List[float]) -> torch.Tensor:
-    """Change the range of a parameter to the specified bounds."""
-    out = param * (bounds[1] - bounds[0]) + bounds[0]
-    return out
+__all__ = ['get_model_dirs',
+           'get_model_files',
+           '_get_dir'
+           ]
 
-def param_bounds_2D(params: torch.Tensor, num: int, bounds: List, ndays: int,
-                    nmul: int) -> torch.Tensor:
-    """Convert a 2D parameter array to a 3D parameter array.
+def get_model_dirs(directory: Union[Path, str]) -> tuple[List[Path], List[str]]:
+    """Get all subdirectories in a given directory.
     
     Parameters
     ----------
-    params : torch.Tensor
-        The 2D parameter array.
-    num : int
-        The number of parameters.
-    bounds : List[float]
-        The parameter bounds.
-    ndays : int
-        The number of days.
-    nmul : int
-        The number of parallel models.
-
-    Returns
-    -------
-    out : torch.Tensor
-        The 3D parameter array.
+    directory : Path or str
+        The parent directory.
     """
-    out_temp = (
-            params[:, num * nmul: (num + 1) * nmul]
-            * (bounds[1] - bounds[0])
-            + bounds[0]
-    )
-    out = out_temp.unsqueeze(0).repeat(ndays, 1, 1).reshape(
-        ndays, params.shape[0], nmul
-    )
-    return out
+    if isinstance(directory, str):
+        directory = Path(directory)
+    
+    dirs = []
+    dir_names = []
+    avoid_list = ['__pycache__']
+
+    for item in directory.iterdir():
+        if item.is_dir() and (item.name not in avoid_list):
+            dirs.append(item)
+            dir_names.append(item.name)
+
+    return dirs, dir_names
+
+
+def get_model_files(directory: Union[Path, str]) -> tuple[List[Path], List[str]]:
+    """Get all files in a given directory.
+    
+    Parameters
+    ----------
+    directory : Path or str
+        The parent directory.
+    """
+    if isinstance(directory, str):
+        directory = Path(directory)
+    
+    files = []
+    file_names = []
+    avoid_list = ['__init__', '.DS_Store', 'README.md', '.git']
+    
+    for item in directory.iterdir():
+        if item.is_file() and (item.name not in avoid_list):
+            files.append(item)
+
+            # Remove file extension
+            name = os.path.splitext(item.name)[0]
+            file_names.append(name)
+    return files, file_names
+
+
+def _get_dir(dir_name: str) -> Path:
+    """Get the path for the given directory name."""
+    dir = Path('../../' + dir_name)
+    if not os.path.exists(dir):
+        dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        dir = dir.parent.parent / dir_name
+    return dir

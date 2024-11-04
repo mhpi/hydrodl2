@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 
 
-
 def UH_gamma(a, b, lenF=10):
     """ TODO: Revise"""
 
@@ -23,25 +22,24 @@ def UH_gamma(a, b, lenF=10):
     return w
 
 def UH_conv(x, UH, viewmode=1):
-    """
-    TODO: Revise
+    # TODO: Revise
     
-    UH is a vector indicating the unit hydrograph
-    the convolved dimension will be the last dimension
-    UH convolution is
-    Q(t)=\integral(x(\tao)*UH(t-\tao))d\tao
-    conv1d does \integral(w(\tao)*x(t+\tao))d\tao
-    hence we flip the UH
-    https://programmer.group/pytorch-learning-conv1d-conv2d-and-conv3d.html
-    view
+    # UH is a vector indicating the unit hydrograph
+    # the convolved dimension will be the last dimension
+    # UH convolution is
+    # Q(t)=\integral(x(\tao)*UH(t-\tao))d\tao
+    # conv1d does \integral(w(\tao)*x(t+\tao))d\tao
+    # hence we flip the UH
+    # https://programmer.group/pytorch-learning-conv1d-conv2d-and-conv3d.html
+    # view
 
-    x: [batch, var, time]
-    UH:[batch, var, uhLen]
-    batch needs to be accommodated by channels and we make use of groups
-    https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
-    https://pytorch.org/docs/stable/nn.functional.html
-    """
-    mm = x.shape;
+    # x: [batch, var, time]
+    # UH:[batch, var, uhLen]
+    # batch needs to be accommodated by channels and we make use of groups
+    # https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    # https://pytorch.org/docs/stable/nn.functional.html
+
+    mm = x.shape
     nb = mm[0]
     m = UH.shape[-1]
     padd = m - 1
