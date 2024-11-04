@@ -1,6 +1,6 @@
-import torch
 from typing import List
 
+import torch
 
 
 def change_param_range(param: torch.Tensor, bounds: List[float]) -> torch.Tensor:

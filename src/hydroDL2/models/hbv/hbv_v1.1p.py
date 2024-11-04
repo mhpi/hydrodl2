@@ -1,11 +1,12 @@
 import torch
-from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
+
 from hydroDL2.core.calc import change_param_range
-                
+from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
 class HBVMulTDET(torch.nn.Module):
-    """Multi-component Pytorch HBV model with capillary rise mod.
+    """Multi-component Pytorch HBV model with capillary rise modification
+    and option to run without warmup.
 
     Adapted from Farshid Rahmani, Yalan Song.
 

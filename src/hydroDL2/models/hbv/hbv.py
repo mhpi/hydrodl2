@@ -1,7 +1,7 @@
 import torch
-from hydroDL2.core.calc.uh_routing import UH_gamma, UH_conv
-from hydroDL2.core.calc import change_param_range
 
+from hydroDL2.core.calc import change_param_range
+from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
 class HBVMulTDET(torch.nn.Module):

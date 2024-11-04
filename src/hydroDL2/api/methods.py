@@ -3,14 +3,13 @@ Note: If adding new public methods, please add them to __all__
 at the top of the file and in api/__init__.py.
 """
 
-from typing import List, Dict
-from torch.nn import Module
-from pathlib import Path
 import importlib.util
 import os
+from typing import Dict, List
 
-from hydroDL2.api import get_model_dir, get_module_dir
-from hydroDL2.core.utils import get_directories, get_files
+from torch.nn import Module
+
+from hydroDL2.core.utils import *
 
 # List of all public-facing methods.
 __all__ = ['available_models',
@@ -30,12 +29,12 @@ def available_models() -> Dict[str, List[str]]:
         A list of available models.
     """
     # Path to the models directory
-    model_dir = get_model_dir()
+    model_dir = _get_dir('models')
     models = {}
 
-    dirs, _ = get_directories(model_dir)
+    dirs, _ = get_model_dirs(model_dir)
     for dir in dirs:
-        _, file_names = get_files(dir)
+        _, file_names = get_model_files(dir)
         models[dir.name] = file_names
     
     return models
@@ -50,14 +49,15 @@ def _list_available_models() -> List[str]:
     List
         A list of available models.
     """
-    model_dir = get_model_dir()
+    model_dir = _get_dir('models')
     models = []
 
-    dirs, _ = get_directories(model_dir)
+    dirs, _ = get_model_dirs(model_dir)
     for dir in dirs:
-        _, file_names = get_files(dir)
+        _, file_names = get_model_files(dir)
         for file in file_names:
-            models.append(file)    
+            models.append(file)  
+
     return models
 
 
@@ -70,12 +70,12 @@ def available_modules() -> Dict[str, List[str]]:
         A list of available modules.
     """
     # Path to the modules directory
-    model_dir = get_module_dir()
+    model_dir = _get_dir('modules')
     modules = {}
 
-    dirs, _ = get_directories(model_dir)
+    dirs, _ = get_model_dirs(model_dir)
     for dir in dirs:
-        _, file_names = get_files(dir)
+        _, file_names = get_model_files(dir)
         modules[dir.name] = file_names
     
     return modules
@@ -99,7 +99,7 @@ def load_model(model: str, ver_name: str = None) -> Module:
         The uninstantiated model.
     """
     # Path to the models directory
-    parent_dir = get_model_dir()
+    parent_dir = _get_dir('models')
 
     # Construct file path
     model_dir = model.split('_')[0].lower()
