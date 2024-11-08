@@ -1,7 +1,9 @@
+from mimetypes import init
 import torch
 
 from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
+
 
 
 class HBVMulTDET(torch.nn.Module):
@@ -12,9 +14,21 @@ class HBVMulTDET(torch.nn.Module):
     Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
     which runs the HBV-light hydrological model (Seibert, 2005).
     """
-    def __init__(self, config):
+    def __init__(self, config=None):
         super(HBVMulTDET, self).__init__()
-        self.parameters_bound = dict(
+        self.config = config
+        self.initialize = False
+        self.warm_up = 0
+        self.static_idx = self.warm_up - 1
+        self.dy_params = []
+        self.dy_drop = 0.0
+        self.variables = ['prcp', 'tmean', 'pet']
+        self.routing = False
+        self.comprout = False
+        self.nearzero = 1e-5
+        self.nmul = 1
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.parameter_bounds = dict(
             parBETA=[1.0, 6.0],
             parFC=[50, 1000],
             parK0=[0.05, 0.9],
@@ -28,73 +42,77 @@ class HBVMulTDET(torch.nn.Module):
             parCFR=[0, 0.1],
             parCWH=[0, 0.2]
         )
-
-        if 'parBETAET' in config['phy_model']['dy_params']['HBV']:
-            self.parameters_bound['parBETAET'] = [0.3, 5]
-
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b
         ]
 
-    def forward(self, x_hydro_model, params_raw, config, static_idx=-1,
-                muwts=None, warm_up=0, init=False, routing=False, comprout=False,
-                conv_params_hydro=None):
-        nearzero = config['dpl_model']['nearzero']
-        nmul = config['dpl_model']['nmul']
+        if config is not None:
+            # Overwrite defaults with config values.
+            self.warm_up = config['phy_model']['warm_up']
+            self.static_idx = config['phy_model']['stat_param_idx']
+            self.dy_drop = config['dy_drop']
+            self.dy_params = config['phy_model']['dy_params']['HBV']
+            self.variables = config['phy_model']['forcings']
+            self.routing = config['phy_model']['routing']
+            self.nearzero = config['phy_model']['nearzero']
+            self.nmul = config['nmul']
 
+            if 'parBETAET' in config['phy_model']['dy_params']['HBV']:
+                self.parameter_bounds['parBETAET'] = [0.3, 5]
+                
+    def forward(self, x, parameters, routing_parameters=None, muwts=None,
+                comprout=False):
+        """Forward pass for the HBV"""
         # Initialization
-        if warm_up > 0:
+        if self.warm_up > 0:
             with torch.no_grad():
-                xinit = x_hydro_model[0:warm_up, :, :]
-                initmodel = HBVMulTDET(config).to(config['device'])
-                Qsinit, SNOWPACK, MELTWATER, SM, SUZ, SLZ = initmodel(
+                xinit = x[0:self.warm_up, :, :]
+                init_model = HBVMulTDET(self.config).to(self.device)
+
+                # Defaults for warm-up.
+                init_model.initialize = True
+                init_model.warm_up = 0
+                init_model.static_idx = self.warm_up-1
+                init_model.muwts = None
+                init_model.routing = False
+                init_model.comprout = False
+                init_model.dy_params = []
+
+                Qsinit, SNOWPACK, MELTWATER, SM, SUZ, SLZ = init_model(
                     xinit,
-                    params_raw,
-                    config,
-                    static_idx=warm_up-1,
+                    parameters,
+                    routing_parameters,
                     muwts=None,
-                    warm_up=0,
-                    init=True,
-                    routing=False,
-                    comprout=False,
-                    conv_params_hydro=conv_params_hydro
+                    comprout=False
                 )
         else:
             # Without warm-up, initialize state variables with zeros.
-            Ngrid = x_hydro_model.shape[1]
-            SNOWPACK = (torch.zeros([Ngrid, nmul], dtype=torch.float32) + 0.001).to(config['device'])
-            MELTWATER = (torch.zeros([Ngrid, nmul], dtype=torch.float32) + 0.001).to(config['device'])
-            SM = (torch.zeros([Ngrid, nmul], dtype=torch.float32) + 0.001).to(config['device'])
-            SUZ = (torch.zeros([Ngrid, nmul], dtype=torch.float32) + 0.001).to(config['device'])
-            SLZ = (torch.zeros([Ngrid, nmul], dtype=torch.float32) + 0.001).to(config['device'])
+            Ngrid = x.shape[1]
+            SNOWPACK = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
+            MELTWATER = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
+            SM = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
+            SUZ = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
+            SLZ = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
+    
 
         # Parameters
         params_dict_raw = dict()
-        for num, param in enumerate(self.parameters_bound.keys()):
+        for num, param in enumerate(self.parameter_bounds.keys()):
             params_dict_raw[param] = change_param_range(
-                param=params_raw[:, :, num, :],
-                bounds=self.parameters_bound[param]
+                param=parameters[:, :, num, :],
+                bounds=self.parameter_bounds[param]
             )
-
-        # List of params to be made dynamic.
-        if init:
-            # Run all static for warmup.
-            dy_params = []
-        else:
-            dy_params = config['phy_model']['dy_params']['HBV']
-
-        vars = config['observations']['phy_forcings']  # Forcing var names
         
         # Forcings
-        P = x_hydro_model[warm_up:, :, vars.index('prcp')]  # Precipitation
-        T = x_hydro_model[warm_up:, :, vars.index('tmean')]  # Mean air temp
-        PET = x_hydro_model[warm_up:, :, vars.index('pet')] # Potential ET
+        P = x[self.warm_up:, :, self.variables.index('prcp')]  # Precipitation
+        T = x[self.warm_up:, :, self.variables.index('tmean')]  # Mean air temp
+        PET = x[self.warm_up:, :, self.variables.index('pet')] # Potential ET
 
         # Expand dims to accomodate for nmul models.
-        Pm = P.unsqueeze(2).repeat(1, 1, nmul)
-        Tm = T.unsqueeze(2).repeat(1, 1, nmul)
-        PETm = PET.unsqueeze(-1).repeat(1, 1, nmul)
+        Pm = P.unsqueeze(2).repeat(1, 1, self.nmul)
+        Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
+        PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
 
         Nstep, Ngrid = P.size()
 
@@ -102,42 +120,42 @@ class HBVMulTDET(torch.nn.Module):
         # P = parPCORR.repeat(Nstep, 1) * P
 
         # Initialize time series of model variables in shape [time, basins, nmul].
-        Qsimmu = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.001).to(config['device'])
-        Q0_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(config['device'])
-        Q1_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(config['device'])
-        Q2_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(config['device'])
+        Qsimmu = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.001).to(self.device)
+        Q0_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(self.device)
+        Q1_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(self.device)
+        Q2_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(self.device)
 
-        AET = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
-        recharge_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
-        excs_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
-        evapfactor_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
-        tosoil_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
-        PERC_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
-        SWE_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(config['device'])
+        AET = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        recharge_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        excs_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        evapfactor_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        tosoil_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        PERC_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        SWE_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
 
         # Init static parameters
         params_dict = dict()
         for key in params_dict_raw.keys():
-            if key not in dy_params: # and len(params_raw.shape) > 2:
+            if key not in self.dy_params: # and len(params_raw.shape) > 2:
                 # Use the last day of data as static parameter's value.
-                params_dict[key] = params_dict_raw[key][static_idx, :, :]
+                params_dict[key] = params_dict_raw[key][self.static_idx, :, :]
 
         # Init dynamic parameters
         # (Use a dydrop ratio: fix a probability mask for setting dynamic params
         # as static in some basins.)
-        if len(dy_params) > 0:
+        if len(self.dy_params) > 0:
             params_dict_raw_dy = dict()
-            pmat = torch.ones([Ngrid, 1]) * config['dpl_model']['dy_drop']
-            for i, key in enumerate(dy_params):
-                drmask = torch.bernoulli(pmat).detach_().to(config['device'])
+            pmat = torch.ones([Ngrid, 1]) * self.dy_drop
+            for i, key in enumerate(self.dy_params):
+                drmask = torch.bernoulli(pmat).detach_().to(self.device)
                 dynPar = params_dict_raw[key]
-                staPar = params_dict_raw[key][static_idx, :, :].unsqueeze(0).repeat([dynPar.shape[0], 1, 1])
+                staPar = params_dict_raw[key][self.static_idx, :, :].unsqueeze(0).repeat([dynPar.shape[0], 1, 1])
                 params_dict_raw_dy[key] = dynPar * (1 - drmask) + staPar * drmask
 
         for t in range(Nstep):
             # Get dynamic parameter values per timestep.
-            for key in dy_params:
-                params_dict[key] = params_dict_raw_dy[key][warm_up + t, :, :]
+            for key in self.dy_params:
+                params_dict[key] = params_dict_raw_dy[key][self.warm_up + t, :, :]
 
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
@@ -184,7 +202,7 @@ class HBVMulTDET(torch.nn.Module):
             evapfactor = torch.clamp(evapfactor, min=0.0, max=1.0)
             ETact = PETm[t, :, :] * evapfactor
             ETact = torch.min(SM, ETact)
-            SM = torch.clamp(SM - ETact, min=nearzero)  # SM != 0 for grad tracking.
+            SM = torch.clamp(SM - ETact, min=self.nearzero)  # SM != 0 for grad tracking.
 
             # Groundwater boxes -------------------------------
             SUZ = SUZ + recharge + excess
@@ -219,22 +237,22 @@ class HBVMulTDET(torch.nn.Module):
             Qsimavg = (Qsimmu * muwts).sum(-1)
 
         # Run routing
-        if routing:
+        if self.routing:
             # Routing for all components or just the average.
             if comprout:
                 # All components; reshape to [time, gages * num models]
-                Qsim = Qsimmu.view(Nstep, Ngrid * nmul)
+                Qsim = Qsimmu.view(Nstep, Ngrid * self.nmul)
             else:
                 # Average, then do routing.
                 Qsim = Qsimavg
 
             # Scale routing params.
             temp_a = change_param_range(
-                param=conv_params_hydro[:, 0],
+                param=routing_parameters[:, 0],
                 bounds=self.conv_routing_hydro_model_bound[0]
             )
             temp_b = change_param_range(
-                param=conv_params_hydro[:, 1],
+                param=routing_parameters[:, 1],
                 bounds=self.conv_routing_hydro_model_bound[1]
             )
             rout_a = temp_a.repeat(Nstep, 1).unsqueeze(-1)
@@ -255,7 +273,7 @@ class HBVMulTDET(torch.nn.Module):
 
             if comprout: 
                 # Qs is now shape [time, [gages*num models], vars]
-                Qstemp = Qsrout.view(Nstep, Ngrid, nmul)
+                Qstemp = Qsrout.view(Nstep, Ngrid, self.nmul)
                 if muwts is None:
                     Qs = Qstemp.mean(-1, keepdim=True)
                 else:
@@ -268,7 +286,7 @@ class HBVMulTDET(torch.nn.Module):
             Qs = torch.unsqueeze(Qsimavg, -1)
             Q0_rout = Q1_rout = Q2_rout = None
 
-        if init:  # Means we are in warm up. here we just return the storages to be used as initial values,
+        if self.initialize:  # Means we are in warm up. here we just return the storages to be used as initial values,
             # Only return model states for warmup.
             return Qs, SNOWPACK, MELTWATER, SM, SUZ, SLZ
         else:
