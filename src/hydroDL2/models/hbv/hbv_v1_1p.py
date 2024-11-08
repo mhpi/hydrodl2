@@ -4,7 +4,6 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-
 class HBVMulTDET(torch.nn.Module):
     """Multi-component Pytorch HBV model with capillary rise modification
     and option to run without warmup.
@@ -19,6 +18,7 @@ class HBVMulTDET(torch.nn.Module):
         self.config = config
         self.initialize = False
         self.warm_up = 0
+        self.pred_cutoff = 0
         self.warm_up_states = False
         self.static_idx = self.warm_up - 1
         self.dy_params = []
@@ -53,6 +53,7 @@ class HBVMulTDET(torch.nn.Module):
         if config is not None:
             # Overwrite defaults with config values.
             self.warm_up = config['phy_model']['warm_up']
+            self.pred_cutoff = self.warm_up
             self.warm_up_states = config['phy_model']['warm_up_states']
             self.static_idx = config['phy_model']['stat_param_idx']
             self.dy_drop = config['dy_drop']
@@ -71,7 +72,6 @@ class HBVMulTDET(torch.nn.Module):
         # Initialization
         if not self.warm_up_states:
             # No state warm up - run the full model for warm_up days.
-            pred_cutoff = self.warm_up
             self.warm_up = 0
         
         if self.warm_up > 0:
@@ -328,6 +328,5 @@ class HBVMulTDET(torch.nn.Module):
         
         if not self.warm_up_states:
             for key in out_dict.keys():
-                out_dict[key] = out_dict[key][pred_cutoff:, :, :]
-                print(out_dict[key].shape)
+                out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
         return out_dict
