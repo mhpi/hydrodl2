@@ -1,4 +1,3 @@
-from mimetypes import init
 import torch
 
 from hydroDL2.core.calc import change_param_range
@@ -94,7 +93,6 @@ class HBVMulTDET(torch.nn.Module):
             SM = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
             SUZ = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
             SLZ = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
-    
 
         # Parameters
         params_dict_raw = dict()
@@ -103,7 +101,7 @@ class HBVMulTDET(torch.nn.Module):
                 param=parameters[:, :, num, :],
                 bounds=self.parameter_bounds[param]
             )
-        
+
         # Forcings
         P = x[self.warm_up:, :, self.variables.index('prcp')]  # Precipitation
         T = x[self.warm_up:, :, self.variables.index('tmean')]  # Mean air temp
@@ -170,18 +168,19 @@ class HBVMulTDET(torch.nn.Module):
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
             melt = torch.min(melt, SNOWPACK)
             MELTWATER = MELTWATER + melt
-            SNOWPACK = SNOWPACK - melt  # NOTE: removed torch.clamp(min=nearzero)
+            SNOWPACK = SNOWPACK - melt
             refreezing = params_dict['parCFR'] * params_dict['parCFMAX'] * (
-                params_dict['parTT'] - Tm[t, :, :])
+                params_dict['parTT'] - Tm[t, :, :]
+                )
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
             refreezing = torch.clamp(refreezing, min=0.0)
             refreezing = torch.min(refreezing, MELTWATER)
             SNOWPACK = SNOWPACK + refreezing
-            MELTWATER = MELTWATER - refreezing  # NOTE: removed torch.clamp(min=nearzero)
+            MELTWATER = MELTWATER - refreezing
             tosoil = MELTWATER - (params_dict['parCWH'] * SNOWPACK)
             tosoil = torch.clamp(tosoil, min=0.0)
-            MELTWATER = MELTWATER - tosoil  # NOTE: removed torch.clamp(min=nearzero)
+            MELTWATER = MELTWATER - tosoil
 
             # Soil and evaporation -------------------------------
             soil_wetness = (SM / params_dict['parFC']) ** params_dict['parBETA']
@@ -194,7 +193,6 @@ class HBVMulTDET(torch.nn.Module):
 
             excess = SM - params_dict['parFC']
             excess = torch.clamp(excess, min=0.0)
-            SM = SM - excess  # NOTE: removed torch.clamp(min=nearzero)
             # parBETAET only has effect when it is a dynamic parameter (=1 otherwise).
             evapfactor = (SM / (params_dict['parLP'] * params_dict['parFC']))
             if 'parBETAET' in params_dict:
@@ -286,8 +284,9 @@ class HBVMulTDET(torch.nn.Module):
             Qs = torch.unsqueeze(Qsimavg, -1)
             Q0_rout = Q1_rout = Q2_rout = None
 
-        if self.initialize:  # Means we are in warm up. here we just return the storages to be used as initial values,
-            # Only return model states for warmup.
+        if self.initialize:
+            # Means we are in warm up. here we just return the storages to be
+            # used as initial values. Only return model states for warmup.
             return Qs, SNOWPACK, MELTWATER, SM, SUZ, SLZ
         else:
             # Return all sim results.
