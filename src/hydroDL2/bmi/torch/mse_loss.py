@@ -1,6 +1,7 @@
 import torch
 from torch.autograd import Function
 
+
 class CustomMSELoss(Function):
     """
     Compute gradient for MSE loss function:

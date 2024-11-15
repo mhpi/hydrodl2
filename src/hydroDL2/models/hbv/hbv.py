@@ -4,7 +4,6 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-
 class HBV(torch.nn.Module):
     """Multi-component Pytorch HBV model.
 

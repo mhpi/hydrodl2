@@ -2,13 +2,12 @@
 A custom backward method to enable gradient backpropogation in a
 physics-informed, differentiable ML BMI.
 """
-import torch
-import numpy as np
 from typing import Optional
-from torch.types import _size, _TensorOrTensors, _TensorOrTensorsOrGradEdge
 
 import bmi_dpl_model as bmi_model
-
+import numpy as np
+import torch
+from torch.types import _size, _TensorOrTensors, _TensorOrTensorsOrGradEdge
 
 
 class BMIBackward(torch.autograd.Function):

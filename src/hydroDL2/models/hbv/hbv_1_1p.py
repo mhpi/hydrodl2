@@ -4,7 +4,6 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-
 class HBVCapillary(torch.nn.Module):
     """Multi-component Pytorch HBV1.1p model with capillary rise modification
     and option to run without warmup.

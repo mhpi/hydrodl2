@@ -7,11 +7,9 @@ Adapted by: Leo Lonzarich, 2 Sep. 2024
 import os
 import sys
 from pathlib import Path
-import numpy as np
 
 import bmi_dpl_model as bmi_model
-
-
+import numpy as np
 
 # Setup counters to track the frequency of passing or failing BMI functions.
 pass_count = 0

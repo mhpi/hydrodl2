@@ -5,26 +5,26 @@ Author: Leo Lonzarich, 2 Sep. 2024
 """
 # Need this to get external packages like conf.config.
 import sys
+
 package_path = '/data/lgl5139/hydro_multimodel/dPLHydro_multimodel'
 sys.path.append(package_path)
 
-import os
 import logging
+import os
+import time
 from pathlib import Path
-from typing import Optional, Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
-import yaml
-from ruamel.yaml import YAML
 import torch
-import time
-
+import yaml
 from bmipy import Bmi
 from conf import config
+from core.data import take_sample_test
 from models.model_handler import ModelHandler
 from omegaconf import DictConfig, OmegaConf
 from pydantic import ValidationError
-from core.data import take_sample_test
+from ruamel.yaml import YAML
 
 log = logging.getLogger(__name__)
 
