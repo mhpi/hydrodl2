@@ -4,8 +4,9 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBVMulTDET(torch.nn.Module):
-    """Multi-component Pytorch HBV model with capillary rise modification
+
+class HBVCapillary(torch.nn.Module):
+    """Multi-component Pytorch HBV1.1p model with capillary rise modification
     and option to run without warmup.
 
     Adapted from Farshid Rahmani, Yalan Song.
@@ -14,7 +15,7 @@ class HBVMulTDET(torch.nn.Module):
     which runs the HBV-light hydrological model (Seibert, 2005).
     """
     def __init__(self, config=None):
-        super(HBVMulTDET, self).__init__()
+        super(HBVCapillary, self).__init__()
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -57,18 +58,19 @@ class HBVMulTDET(torch.nn.Module):
             self.warm_up_states = config['phy_model']['warm_up_states']
             self.static_idx = config['phy_model']['stat_param_idx']
             self.dy_drop = config['dy_drop']
-            self.dy_params = config['phy_model']['dy_params']['HBV_v1_1p']
+            self.dy_params = config['phy_model']['dy_params']['HBV_1_1p']
             self.variables = config['phy_model']['forcings']
             self.routing = config['phy_model']['routing']
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
+            self.device = config['device']
 
-            if 'parBETAET' in config['phy_model']['dy_params']['HBV_v1_1p']:
+            if 'parBETAET' in config['phy_model']['dy_params']['HBV_1_1p']:
                 self.parameter_bounds['parBETAET'] = [0.3, 5]
                 
     def forward(self, x, parameters, routing_parameters=None, muwts=None,
                 comprout=False):
-        """Forward pass for the HBV"""
+        """Forward pass for HBV1.1p"""
         # Initialization
         if not self.warm_up_states:
             # No state warm up - run the full model for warm_up days.
@@ -76,8 +78,8 @@ class HBVMulTDET(torch.nn.Module):
         
         if self.warm_up > 0:
             with torch.no_grad():
-                xinit = x[0:self.warm_up, :, :]
-                init_model = HBVMulTDET(self.config).to(self.device)
+                x_init = x[0:self.warm_up, :, :]
+                init_model = HBVCapillary(self.config).to(self.device)
 
                 # Defaults for warm-up.
                 init_model.initialize = True
@@ -89,7 +91,7 @@ class HBVMulTDET(torch.nn.Module):
                 init_model.dy_params = []
 
                 Qsinit, SNOWPACK, MELTWATER, SM, SUZ, SLZ = init_model(
-                    xinit,
+                    x_init,
                     parameters,
                     routing_parameters,
                     muwts=None,
@@ -98,11 +100,21 @@ class HBVMulTDET(torch.nn.Module):
         else:
             # Without warm-up, initialize state variables with zeros.
             Ngrid = x.shape[1]
-            SNOWPACK = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
-            MELTWATER = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
-            SM = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
-            SUZ = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
-            SLZ = (torch.zeros([Ngrid, self.nmul], dtype=torch.float32) + 0.001).to(self.device)
+            SNOWPACK = torch.zeros([Ngrid, self.nmul],
+                                   dtype=torch.float32,
+                                   device=self.device) + 0.001
+            MELTWATER = torch.zeros([Ngrid, self.nmul],
+                                    dtype=torch.float32,
+                                    device=self.device) + 0.001
+            SM = torch.zeros([Ngrid, self.nmul],
+                             dtype=torch.float32,
+                             device=self.device) + 0.001
+            SUZ = torch.zeros([Ngrid, self.nmul],
+                              dtype=torch.float32,
+                              device=self.device) + 0.001
+            SLZ = torch.zeros([Ngrid, self.nmul],
+                              dtype=torch.float32,
+                              device=self.device) + 0.001
 
         # Parameters
         params_dict_raw = dict()
@@ -128,19 +140,19 @@ class HBVMulTDET(torch.nn.Module):
         # P = parPCORR.repeat(Nstep, 1) * P
 
         # Initialize time series of model variables in shape [time, basins, nmul].
-        Qsimmu = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.001).to(self.device)
-        Q0_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(self.device)
-        Q1_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(self.device)
-        Q2_sim = (torch.zeros(Pm.size(), dtype=torch.float32) + 0.0001).to(self.device)
+        Qsimmu = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+        Q0_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
+        Q1_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
+        Q2_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
 
-        AET = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        recharge_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        excs_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        evapfactor_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        tosoil_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        PERC_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        SWE_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
-        capillary_sim = (torch.zeros(Pm.size(), dtype=torch.float32)).to(self.device)
+        AET = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        recharge_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        evapfactor_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        capillary_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
         # Init static parameters
         params_dict = dict()
@@ -302,8 +314,7 @@ class HBVMulTDET(torch.nn.Module):
             Q0_rout = Q1_rout = Q2_rout = None
 
         if self.initialize:
-            # Means we are in warm up. here we just return the storages to be
-            # used as initial values. Only return model states for warmup.
+            # If initialize is True, it is warm-up mode; only return storages (states).
             return Qs, SNOWPACK, MELTWATER, SM, SUZ, SLZ
 
         # Return all sim results.

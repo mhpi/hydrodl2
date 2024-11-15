@@ -106,7 +106,7 @@ def execute() -> None:
             # Set physics model forcings...
             for i, var in enumerate(model.config['observations']['var_t_hydro_model']):
                 standard_name = model._var_name_map_short_first[var]
-                model.set_value(standard_name, dataset_dict['x_hydro_model'][t, :, i], model='pm') 
+                model.set_value(standard_name, dataset_dict['x_phy'][t, :, i], model='pm') 
 
             # Set physics model attributes...
             for i, var in enumerate(model.config['observations']['var_c_hydro_model']):
@@ -150,7 +150,7 @@ def execute() -> None:
         # Set physics model forcings...
         for i, var in enumerate(model.config['observations']['var_t_hydro_model']):
             standard_name = model._var_name_map_short_first[var]
-            model.set_value(standard_name, dataset_dict['x_hydro_model'][t:rho + t + 1, :, i], model='pm') 
+            model.set_value(standard_name, dataset_dict['x_phy'][t:rho + t + 1, :, i], model='pm') 
 
         # Set physics model attributes...
         for i, var in enumerate(model.config['observations']['var_c_hydro_model']):

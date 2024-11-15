@@ -114,6 +114,7 @@ def load_model(model: str, ver_name: str = None) -> Module:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     except FileNotFoundError:
+        print(model)
         raise ImportError(f"Model '{model}' not found.")
     
     # Retrieve the version name if specified, otherwise get the first class in the module

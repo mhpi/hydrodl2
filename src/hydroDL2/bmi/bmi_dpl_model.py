@@ -826,7 +826,7 @@ class dPLModelBMI(Bmi):
             if value.ndim == 3:
                 # TODO: I don't think we actually need this.
                 # Remove the warmup period for all except airtemp_memory and hydro inputs.
-                if key in ['airT_mem_temp_model', 'x_hydro_model', 'inputs_nn_scaled']:
+                if key in ['airT_mem_temp_model', 'x_phy', 'inputs_nn_scaled']:
                     warm_up = 0
                 else:
                     warm_up = config['warm_up']
@@ -850,7 +850,7 @@ class dPLModelBMI(Bmi):
         # NOTE: used to have rho+1 here but this is no longer necessary?
         x_nn = np.zeros((rho + 1, n_basins, len(self.config['observations']['var_t_nn'])))
         c_nn = np.zeros((rho + 1, n_basins, len(self.config['observations']['var_c_nn'])))
-        x_hydro_model = np.zeros((rho + 1, n_basins, len(self.config['observations']['var_t_hydro_model'])))
+        x_phy = np.zeros((rho + 1, n_basins, len(self.config['observations']['var_t_hydro_model'])))
         c_hydro_model = np.zeros((n_basins, len(self.config['observations']['var_c_hydro_model'])))
 
         for i, var in enumerate(self.config['observations']['var_t_nn']):
@@ -864,7 +864,7 @@ class dPLModelBMI(Bmi):
 
         for i, var in enumerate(self.config['observations']['var_t_hydro_model']):
             standard_name = self._var_name_map_short_first[var]
-            x_hydro_model[:, :, i] = np.array([self._pm_values[standard_name]])
+            x_phy[:, :, i] = np.array([self._pm_values[standard_name]])
 
         for i, var in enumerate(self.config['observations']['var_c_hydro_model']):
             standard_name = self._var_name_map_short_first[var]
@@ -872,7 +872,7 @@ class dPLModelBMI(Bmi):
         
         self.dataset_dict = {
             'inputs_nn_scaled': np.concatenate((x_nn, c_nn), axis=2), #[np.newaxis,:,:],
-            'x_hydro_model': x_hydro_model, #[np.newaxis,:,:],
+            'x_phy': x_phy, #[np.newaxis,:,:],
             'c_hydro_model': c_hydro_model
         }
         print(self.dataset_dict['inputs_nn_scaled'].shape)
