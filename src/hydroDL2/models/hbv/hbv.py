@@ -12,7 +12,7 @@ class HBV(torch.nn.Module):
     Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
     which runs the HBV-light hydrological model (Seibert, 2005).
     """
-    def __init__(self, config=None):
+    def __init__(self, config=None, device=None):
         super(HBV, self).__init__()
         self.config = config
         self.initialize = False
@@ -25,7 +25,6 @@ class HBV(torch.nn.Module):
         self.comprout = False
         self.nearzero = 1e-5
         self.nmul = 1
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.parameter_bounds = dict(
             parBETA=[1.0, 6.0],
             parFC=[50, 1000],
@@ -44,6 +43,8 @@ class HBV(torch.nn.Module):
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b
         ]
+        if not device:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         if config is not None:
             # Overwrite defaults with config values.
@@ -55,7 +56,6 @@ class HBV(torch.nn.Module):
             self.routing = config['phy_model']['routing']
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
-            self.device = config['device']
 
             if 'parBETAET' in config['phy_model']['dy_params']['HBV']:
                 self.parameter_bounds['parBETAET'] = [0.3, 5]

@@ -9,7 +9,7 @@ class PRMS(torch.nn.Module):
 
     Adapted from Farshid Rahmani.
     """
-    def __init__(self, config=None):
+    def __init__(self, config=None, device=None):
         super(PRMS, self).__init__()
         self.config = config
         self.initialize = False
@@ -48,6 +48,9 @@ class PRMS(torch.nn.Module):
             [0, 6.5]   # routing parameter b
         ]
 
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            
         if config is not None:
             # Overwrite defaults with config values.
             self.warm_up = config['phy_model']['warm_up']
@@ -58,7 +61,6 @@ class PRMS(torch.nn.Module):
             self.routing = config['phy_model']['routing']
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
-            self.device = config['device']
 
     def forward(self, x, parameters, routing_parameters=None, muwts=None,
                 comprout=False):
