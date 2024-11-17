@@ -4,6 +4,7 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
+
 class HBV(torch.nn.Module):
     """Multi-component Pytorch HBV model.
 
@@ -13,7 +14,7 @@ class HBV(torch.nn.Module):
     which runs the HBV-light hydrological model (Seibert, 2005).
     """
     def __init__(self, config=None, device=None):
-        super(HBV, self).__init__()
+        super().__init__()
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -25,20 +26,20 @@ class HBV(torch.nn.Module):
         self.comprout = False
         self.nearzero = 1e-5
         self.nmul = 1
-        self.parameter_bounds = dict(
-            parBETA=[1.0, 6.0],
-            parFC=[50, 1000],
-            parK0=[0.05, 0.9],
-            parK1=[0.01, 0.5],
-            parK2=[0.001, 0.2],
-            parLP=[0.2, 1],
-            parPERC=[0, 10],
-            parUZL=[0, 100],
-            parTT=[-2.5, 2.5],
-            parCFMAX=[0.5, 10],
-            parCFR=[0, 0.1],
-            parCWH=[0, 0.2]
-        )
+        self.parameter_bounds = {
+            parBETA: [1.0, 6.0],
+            parFC: [50, 1000],
+            parK0: [0.05, 0.9],
+            parK1: [0.01, 0.5],
+            parK2: [0.001, 0.2],
+            parLP: [0.2, 1],
+            parPERC: [0, 10],
+            parUZL: [0, 100],
+            parTT: [-2.5, 2.5],
+            parCFMAX: [0.5, 10],
+            parCFR: [0, 0.1],
+            parCWH: [0, 0.2]
+        }
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b
@@ -57,12 +58,12 @@ class HBV(torch.nn.Module):
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
 
-            if 'parBETAET' in config['phy_model']['dy_params']['HBV']:
+            if 'parBETAET' in self.dy_params :
                 self.parameter_bounds['parBETAET'] = [0.3, 5]
 
     def forward(self, x, parameters, routing_parameters=None, muwts=None,
                 comprout=False):
-        """Forward pass for HBV"""
+        """Forward pass for HBV."""
         # Initialization
         if self.warm_up > 0:
             with torch.no_grad():
@@ -87,20 +88,20 @@ class HBV(torch.nn.Module):
                 )
         else:
             # Without warm-up, initialize state variables with zeros.
-            Ngrid = x.shape[1]
-            SNOWPACK = torch.zeros([Ngrid, self.nmul],
+            n_grid = x.shape[1]
+            SNOWPACK = torch.zeros([n_grid, self.nmul],
                                    dtype=torch.float32,
                                    device=self.device) + 0.001
-            MELTWATER = torch.zeros([Ngrid, self.nmul],
+            MELTWATER = torch.zeros([n_grid, self.nmul],
                                     dtype=torch.float32,
                                     device=self.device) + 0.001
-            SM = torch.zeros([Ngrid, self.nmul],
+            SM = torch.zeros([n_grid, self.nmul],
                              dtype=torch.float32,
                              device=self.device) + 0.001
-            SUZ = torch.zeros([Ngrid, self.nmul],
+            SUZ = torch.zeros([n_grid, self.nmul],
                               dtype=torch.float32,
                               device=self.device) + 0.001
-            SLZ = torch.zeros([Ngrid, self.nmul],
+            SLZ = torch.zeros([n_grid, self.nmul],
                               dtype=torch.float32,
                               device=self.device) + 0.001
 
@@ -122,10 +123,10 @@ class HBV(torch.nn.Module):
         Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
         PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
 
-        Nstep, Ngrid = P.size()
+        n_steps, n_grid = P.size()
 
         # Apply correction factor to precipitation
-        # P = parPCORR.repeat(Nstep, 1) * P
+        # P = parPCORR.repeat(n_steps, 1) * P
 
         # Initialize time series of model variables in shape [time, basins, nmul].
         Qsimmu = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
@@ -153,14 +154,14 @@ class HBV(torch.nn.Module):
         # as static in some basins.)
         if len(self.dy_params) > 0:
             params_dict_raw_dy = dict()
-            pmat = torch.ones([Ngrid, 1]) * self.dy_drop
+            pmat = torch.ones([n_grid, 1]) * self.dy_drop
             for i, key in enumerate(self.dy_params):
                 drmask = torch.bernoulli(pmat).detach_().to(self.device)
                 dynPar = params_dict_raw[key]
                 staPar = params_dict_raw[key][self.static_idx, :, :].unsqueeze(0).repeat([dynPar.shape[0], 1, 1])
                 params_dict_raw_dy[key] = dynPar * (1 - drmask) + staPar * drmask
 
-        for t in range(Nstep):
+        for t in range(n_steps):
             # Get dynamic parameter values per timestep.
             for key in self.dy_params:
                 params_dict[key] = params_dict_raw_dy[key][self.warm_up + t, :, :]
@@ -249,7 +250,7 @@ class HBV(torch.nn.Module):
             # Routing for all components or just the average.
             if comprout:
                 # All components; reshape to [time, gages * num models]
-                Qsim = Qsimmu.view(Nstep, Ngrid * self.nmul)
+                Qsim = Qsimmu.view(n_steps, n_grid * self.nmul)
             else:
                 # Average, then do routing.
                 Qsim = Qsimavg
@@ -263,8 +264,8 @@ class HBV(torch.nn.Module):
                 param=routing_parameters[:, 1],
                 bounds=self.conv_routing_hydro_model_bound[1]
             )
-            rout_a = temp_a.repeat(Nstep, 1).unsqueeze(-1)
-            rout_b = temp_b.repeat(Nstep, 1).unsqueeze(-1)
+            rout_a = temp_a.repeat(n_steps, 1).unsqueeze(-1)
+            rout_b = temp_b.repeat(n_steps, 1).unsqueeze(-1)
 
             UH = UH_gamma(rout_a, rout_b, lenF=15)  # lenF: folter
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
@@ -281,7 +282,7 @@ class HBV(torch.nn.Module):
 
             if comprout: 
                 # Qs is now shape [time, [gages*num models], vars]
-                Qstemp = Qsrout.view(Nstep, Ngrid, self.nmul)
+                Qstemp = Qsrout.view(n_steps, n_grid, self.nmul)
                 if muwts is None:
                     Qs = Qstemp.mean(-1, keepdim=True)
                 else:

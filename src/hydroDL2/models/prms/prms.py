@@ -10,7 +10,7 @@ class PRMS(torch.nn.Module):
     Adapted from Farshid Rahmani.
     """
     def __init__(self, config=None, device=None):
-        super(PRMS, self).__init__()
+        super().__init__()
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -23,26 +23,26 @@ class PRMS(torch.nn.Module):
         self.nearzero = 1e-5
         self.nmul = 1
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.parameter_bounds = dict(
-            tt=[-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
-            ddf=[0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
-            alpha=[0, 1],     # alpha, Fraction of rainfall on soil moisture going to interception [-]
-            beta=[0, 1],    # beta, Fraction of catchment where rain goes to soil moisture [-]
-            stor=[0, 5],    # stor, Maximum interception capcity [mm]
-            retip=[0, 50],    # retip, Maximum impervious area storage [mm]
-            fscn=[0, 1],    # fscn, Fraction of SCX where SCN is located [-]
-            scx=[0, 1],    # scx, Maximum contributing fraction area to saturation excess flow [-]
-            flz=[0.005, 0.995],    # flz, Fraction of total soil moisture that is the lower zone [-]
-            stot=[1, 2000],    # stot, Total soil moisture storage [mm]: REMX+SMAX
-            cgw=[0, 20],    # cgw, Constant drainage to deep groundwater [mm/d]
-            resmax=[1, 300],    # resmax, Maximum flow routing reservoir storage (used for scaling only, there is no overflow) [mm]
-            k1=[0, 1],    # k1, Groundwater drainage coefficient [d-1]
-            k2=[1, 5],    # k2, Groundwater drainage non-linearity [-]
-            k3=[0, 1],    # k3, Interflow coefficient 1 [d-1]
-            k4=[0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
-            k5=[0, 1],    # k5, Baseflow coefficient [d-1]
-            k6=[0, 1],    # k6, Groundwater sink coefficient [d-1],
-        )
+        self.parameter_bounds = {
+            tt: [-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
+            ddf: [0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
+            alpha: [0, 1],     # alpha, Fraction of rainfall on soil moisture going to interception [-]
+            beta: [0, 1],    # beta, Fraction of catchment where rain goes to soil moisture [-]
+            stor: [0, 5],    # stor, Maximum interception capcity [mm]
+            retip: [0, 50],    # retip, Maximum impervious area storage [mm]
+            fscn: [0, 1],    # fscn, Fraction of SCX where SCN is located [-]
+            scx: [0, 1],    # scx, Maximum contributing fraction area to saturation excess flow [-]
+            flz: [0.005, 0.995],    # flz, Fraction of total soil moisture that is the lower zone [-]
+            stot: [1, 2000],    # stot, Total soil moisture storage [mm]: REMX+SMAX
+            cgw: [0, 20],    # cgw, Constant drainage to deep groundwater [mm/d]
+            resmax: [1, 300],    # resmax, Maximum flow routing reservoir storage (used for scaling only, there is no overflow) [mm]
+            k1: [0, 1],    # k1, Groundwater drainage coefficient [d-1]
+            k2: [1, 5],    # k2, Groundwater drainage non-linearity [-]
+            k3: [0, 1],    # k3, Interflow coefficient 1 [d-1]
+            k4: [0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
+            k5: [0, 1],    # k5, Baseflow coefficient [d-1]
+            k6: [0, 1],    # k6, Groundwater sink coefficient [d-1],
+        }
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
             [0, 6.5]   # routing parameter b
@@ -64,7 +64,7 @@ class PRMS(torch.nn.Module):
 
     def forward(self, x, parameters, routing_parameters=None, muwts=None,
                 comprout=False):
-        """Forward pass for PRMS"""
+        """Forward pass for PRMS."""
         # Initialization
         if self.warm_up > 0:
             with torch.no_grad():
@@ -90,34 +90,34 @@ class PRMS(torch.nn.Module):
                 )
         else:
             # Without warm-up, initialize state variables with zeros.
-            Ngrid = x.shape[1]
+            n_grid = x.shape[1]
 
             # snow storage
-            snow_storage = torch.zeros([Ngrid, self.nmul],
+            snow_storage = torch.zeros([n_grid, self.nmul],
                                        dtype=torch.float32,
                                        device=self.device) + 0.001
             # interception storage
-            XIN_storage = torch.zeros([Ngrid, self.nmul],
+            XIN_storage = torch.zeros([n_grid, self.nmul],
                                       dtype=torch.float32,
                                       device=self.device) + 0.001
             # RSTOR storage
-            RSTOR_storage = torch.zeros([Ngrid, self.nmul],
+            RSTOR_storage = torch.zeros([n_grid, self.nmul],
                                         dtype=torch.float32,
                                         device=self.device) + 0.001
             # storage in upper soil moisture zone
-            RECHR_storage = torch.zeros([Ngrid, self.nmul],
+            RECHR_storage = torch.zeros([n_grid, self.nmul],
                                         dtype=torch.float32,
                                         device=self.device) + 0.001
             # storage in lower soil moisture zone
-            SMAV_storage = torch.zeros([Ngrid, self.nmul],
+            SMAV_storage = torch.zeros([n_grid, self.nmul],
                                        dtype=torch.float32,
                                        device=self.device) + 0.001
             # storage in runoff reservoir
-            RES_storage = torch.zeros([Ngrid, self.nmul],
+            RES_storage = torch.zeros([n_grid, self.nmul],
                                       dtype=torch.float32,
                                       device=self.device) + 0.001
             # GW storage
-            GW_storage = torch.zeros([Ngrid, self.nmul],
+            GW_storage = torch.zeros([n_grid, self.nmul],
                                      dtype=torch.float32,
                                      device=self.device) + 0.001
         # Parameters
@@ -138,7 +138,7 @@ class PRMS(torch.nn.Module):
         Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
         PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
 
-        Nstep, Ngrid = P.size()
+        n_steps, n_grid = P.size()
 
         # AET = PET_coef * PET
         # initialize the Q_sim and other fluxes
@@ -169,14 +169,14 @@ class PRMS(torch.nn.Module):
         # as static in some basins.)
         if len(self.dy_params) > 0:
             params_dict_raw_dy = dict()
-            pmat = torch.ones([Ngrid, 1]) * self.dy_drop
+            pmat = torch.ones([n_grid, 1]) * self.dy_drop
             for i, key in enumerate(self.dy_params):
                 drmask = torch.bernoulli(pmat).detach_().to(self.device)
                 dynPar = params_dict_raw[key]
                 staPar = params_dict_raw[key][self.static_idx, :, :].unsqueeze(0).repeat([dynPar.shape[0], 1, 1])
                 params_dict_raw_dy[key] = dynPar * (1 - drmask) + staPar * drmask
 
-        for t in range(Nstep):
+        for t in range(n_steps):
             # Get dynamic parameter values per timestep.
             for key in self.dy_params:
                 params_dict[key] = params_dict_raw_dy[key][self.warm_up + t, :, :]
@@ -290,8 +290,8 @@ class PRMS(torch.nn.Module):
                 param=routing_parameters[:, 1],
                 bounds=self.conv_routing_hydro_model_bound[1]
             )
-            rout_a = temp_a.repeat(Nstep, 1).unsqueeze(-1)
-            rout_b = temp_b.repeat(Nstep, 1).unsqueeze(-1)
+            rout_a = temp_a.repeat(n_steps, 1).unsqueeze(-1)
+            rout_b = temp_b.repeat(n_steps, 1).unsqueeze(-1)
 
             UH = UH_gamma(rout_a, rout_b, lenF=15)  # lenF: folter
             rf = Q_sim.mean(-1, keepdim=True).permute([1, 2, 0])  # [gages,vars,time]
