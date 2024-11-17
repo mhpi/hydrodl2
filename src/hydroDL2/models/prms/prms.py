@@ -24,24 +24,24 @@ class PRMS(torch.nn.Module):
         self.nmul = 1
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.parameter_bounds = {
-            tt: [-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
-            ddf: [0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
-            alpha: [0, 1],     # alpha, Fraction of rainfall on soil moisture going to interception [-]
-            beta: [0, 1],    # beta, Fraction of catchment where rain goes to soil moisture [-]
-            stor: [0, 5],    # stor, Maximum interception capcity [mm]
-            retip: [0, 50],    # retip, Maximum impervious area storage [mm]
-            fscn: [0, 1],    # fscn, Fraction of SCX where SCN is located [-]
-            scx: [0, 1],    # scx, Maximum contributing fraction area to saturation excess flow [-]
-            flz: [0.005, 0.995],    # flz, Fraction of total soil moisture that is the lower zone [-]
-            stot: [1, 2000],    # stot, Total soil moisture storage [mm]: REMX+SMAX
-            cgw: [0, 20],    # cgw, Constant drainage to deep groundwater [mm/d]
-            resmax: [1, 300],    # resmax, Maximum flow routing reservoir storage (used for scaling only, there is no overflow) [mm]
-            k1: [0, 1],    # k1, Groundwater drainage coefficient [d-1]
-            k2: [1, 5],    # k2, Groundwater drainage non-linearity [-]
-            k3: [0, 1],    # k3, Interflow coefficient 1 [d-1]
-            k4: [0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
+            'tt': [-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
+            'ddf': [0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
+            'alpha': [0, 1],     # alpha, Fraction of rainfall on soil moisture going to interception [-]
+            'beta': [0, 1],    # beta, Fraction of catchment where rain goes to soil moisture [-]
+            'stor': [0, 5],    # stor, Maximum interception capcity [mm]
+            'retip': [0, 50],    # retip, Maximum impervious area storage [mm]
+            'fscn': [0, 1],    # fscn, Fraction of SCX where SCN is located [-]
+            'scx': [0, 1],    # scx, Maximum contributing fraction area to saturation excess flow [-]
+            'flz': [0.005, 0.995],    # flz, Fraction of total soil moisture that is the lower zone [-]
+            'stot': [1, 2000],    # stot, Total soil moisture storage [mm]: REMX+SMAX
+            'cgw': [0, 20],    # cgw, Constant drainage to deep groundwater [mm/d]
+            'resmax': [1, 300],    # resmax, Maximum flow routing reservoir storage (used for scaling only, there is no overflow) [mm]
+            'k1': [0, 1],    # k1, Groundwater drainage coefficient [d-1]
+            'k2': [1, 5],    # k2, Groundwater drainage non-linearity [-]
+            'k3': [0, 1],    # k3, Interflow coefficient 1 [d-1]
+            'k4': [0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
             k5: [0, 1],    # k5, Baseflow coefficient [d-1]
-            k6: [0, 1],    # k6, Groundwater sink coefficient [d-1],
+            'k6': [0, 1],    # k6, Groundwater sink coefficient [d-1],
         }
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
@@ -322,21 +322,27 @@ class PRMS(torch.nn.Module):
             return Qsrout, snow_storage, XIN_storage, RSTOR_storage, \
                 RECHR_storage, SMAV_storage, RES_storage, GW_storage
         else:
-            return dict(flow_sim=Qsrout,
-                        srflow=Qsas_rout + Qsro_rout,
-                        ssflow=Qras_rout,
-                        gwflow=Qbas_rout,
-                        sink=torch.mean(snk_sim, -1).unsqueeze(-1),
-                        PET_hydro=PET.mean(-1, keepdim=True),
-                        AET_hydro=AET.mean(-1, keepdim=True),
-                        flow_sim_no_rout=Q_sim.mean(-1, keepdim=True),
-                        srflow_no_rout=(sas_sim + sro_sim).mean(-1, keepdim=True),
-                        ssflow_no_rout=ras_sim.mean(-1, keepdim=True),
-                        gwflow_no_rout=bas_sim.mean(-1, keepdim=True),
-                        flux_inf=inf_sim.mean(-1, keepdim=True),
-                        flux_pc=PC_sim.mean(-1, keepdim=True),
-                        flux_sep=SEP_sim.mean(-1, keepdim=True),
-                        flux_gad=GAD_sim.mean(-1, keepdim=True),
-                        flux_ea=ea_sim.mean(-1, keepdim=True),
-                        flux_qres=qres_sim.mean(-1, keepdim=True),
-                        )
+            # Baseflow index (BFI) calculation
+            BFI_sim = 100 * (torch.sum(Qbas_rout, dim=0) / (
+                torch.sum(Qsrout, dim=0) + self.nearzero))[:,0]
+            
+            return {
+                'flow_sim': Qsrout,
+                'srflow': Qsas_rout + Qsro_rout,
+                'ssflow': Qras_rout,
+                'gwflow': Qbas_rout,
+                'sink': torch.mean(snk_sim, -1).unsqueeze(-1),
+                'PET_hydro': PET.mean(-1, keepdim=True),
+                'AET_hydro': AET.mean(-1, keepdim=True),
+                'flow_sim_no_rout': Q_sim.mean(-1, keepdim=True),
+                'srflow_no_rout': (sas_sim + sro_sim).mean(-1, keepdim=True),
+                'ssflow_no_rout': ras_sim.mean(-1, keepdim=True),
+                'gwflow_no_rout': bas_sim.mean(-1, keepdim=True),
+                'flux_inf': inf_sim.mean(-1, keepdim=True),
+                'flux_pc': PC_sim.mean(-1, keepdim=True),
+                'flux_sep': SEP_sim.mean(-1, keepdim=True),
+                'flux_gad': GAD_sim.mean(-1, keepdim=True),
+                'flux_ea': ea_sim.mean(-1, keepdim=True),
+                'flux_qres': qres_sim.mean(-1, keepdim=True),
+                'BFI_sim': BFI_sim.mean(-1, keepdim=True)   
+            }

@@ -30,20 +30,20 @@ class HBVCapillary(torch.nn.Module):
         self.nearzero = 1e-5
         self.nmul = 1
         self.parameter_bounds = {
-            parBETA: [1.0, 6.0],
-            parFC: [50, 1000],
-            parK0: [0.05, 0.9],
-            parK1: [0.01, 0.5],
-            parK2: [0.001, 0.2],
-            parLP: [0.2, 1],
-            parPERC: [0, 10],
-            parUZL: [0, 100],
-            parTT: [-2.5, 2.5],
-            parCFMAX: [0.5, 10],
-            parCFR: [0, 0.1],
-            parCWH: [0, 0.2]
-            parBETAET: [0.3, 5],
-            parC: [0, 1]
+            'parBETA': [1.0, 6.0],
+            'parFC': [50, 1000],
+            'parK0': [0.05, 0.9],
+            'parK1': [0.01, 0.5],
+            'parK2': [0.001, 0.2],
+            'parLP': [0.2, 1],
+            'parPERC': [0, 10],
+            'parUZL': [0, 100],
+            'parTT': [-2.5, 2.5],
+            'parCFMAX': [0.5, 10],
+            'parCFR': [0, 0.1],
+            'parCWH': [0, 0.2]
+            'parBETAET': [0.3, 5],
+            'parC': [0, 1]
         }
         self.conv_routing_hydro_model_bound = [
             [0, 2.9],  # routing parameter a
@@ -313,28 +313,34 @@ class HBVCapillary(torch.nn.Module):
         if self.initialize:
             # If initialize is True, it is warm-up mode; only return storages (states).
             return Qs, SNOWPACK, MELTWATER, SM, SUZ, SLZ
-
-        # Return all sim results.
-        out_dict = dict(flow_sim=Qs,
-                        srflow=Q0_rout,
-                        ssflow=Q1_rout,
-                        gwflow=Q2_rout,
-                        AET_hydro=AET.mean(-1, keepdim=True),
-                        PET_hydro=PETm.mean(-1, keepdim=True),
-                        SWE=SWE_sim.mean(-1, keepdim=True),
-                        flow_sim_no_rout=Qsim.unsqueeze(dim=2),
-                        srflow_no_rout=Q0_sim.mean(-1, keepdim=True),
-                        ssflow_no_rout=Q1_sim.mean(-1, keepdim=True),
-                        gwflow_no_rout=Q2_sim.mean(-1, keepdim=True),
-                        recharge=recharge_sim.mean(-1, keepdim=True),
-                        excs=excs_sim.mean(-1, keepdim=True),
-                        evapfactor=evapfactor_sim.mean(-1, keepdim=True),
-                        tosoil=tosoil_sim.mean(-1, keepdim=True),
-                        percolation=PERC_sim.mean(-1, keepdim=True),
-                        capillary=capillary_sim.mean(-1, keepdim=True)
-                        )
-        
-        if not self.warm_up_states:
-            for key in out_dict.keys():
-                out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
-        return out_dict
+        else:
+            # Baseflow index (BFI) calculation
+            BFI_sim = 100 * (torch.sum(Q2_rout, dim=0) / (
+                torch.sum(Qs, dim=0) + self.nearzero))[:,0]
+                
+            # Return all sim results.
+            out_dict = {
+                'flow_sim': Qs,
+                'srflow': Q0_rout,
+                'ssflow': Q1_rout,
+                'gwflow': Q2_rout,
+                'AET_hydro': AET.mean(-1, keepdim=True),
+                'PET_hydro': PETm.mean(-1, keepdim=True),
+                'SWE': SWE_sim.mean(-1, keepdim=True),
+                'flow_sim_no_rout': Qsim.unsqueeze(dim=2),
+                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),
+                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),
+                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),
+                'recharge': recharge_sim.mean(-1, keepdim=True),
+                'excs': excs_sim.mean(-1, keepdim=True),
+                'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
+                'tosoil': tosoil_sim.mean(-1, keepdim=True),
+                'percolation': PERC_sim.mean(-1, keepdim=True),
+                'capillary': capillary_sim.mean(-1, keepdim=True)
+                'BFI_sim': BFI_sim.mean(-1, keepdim=True)   
+            }
+            
+            if not self.warm_up_states:
+                for key in out_dict.keys():
+                    out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
+            return out_dict
