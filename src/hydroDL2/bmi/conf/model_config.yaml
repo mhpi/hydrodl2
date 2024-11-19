@@ -1,0 +1,133 @@
+## General Config -------------------------------#
+mode: forward
+ensemble_type: none
+use_checkpoint: False
+
+random_seed: 0
+device: cuda
+gpu_id: [1]  # [1, 2]
+
+time_step_seconds: 86400  # models have daily resolution, which must be reported in seconds 
+initial_time: 0
+start_time: 1995/10/01
+end_timestep: 5475  # (15 year test period)
+train:
+    start_time: 1980/10/01
+    end_time: 1995/10/01
+test:
+    start_time: 1995/10/01
+    end_time: 2010/10/01
+
+batch_basins: 25
+
+name: hmm1.3-${observations.name}
+# NOTE: Temporarily only using output_dir to load a trained model into BMI.
+output_dir: /data/lgl5139/hydro_multimodel/dPLHydro_multimodel/runs/camels_671_dp_2024/saved_models/train_1980_1995/4_forcing/no_ensemble/LSTM_E50_R365_B100_H256_n16_0/HBV_/RmseLossFlowComb_/static_para
+
+
+## BMI Specific Config -------------------------------#
+time_step_delta: 1
+time_step_seconds: 86400  # seconds/day 
+initial_time: 0
+start_time: 1995/10/01
+end_time: 1999/10/01 # 86400*365*15 (15 year test period)
+forward_init: True  # Forward model in BMI .initialize() step.
+seq_mode: False # True for sequence to sequence (run forward in BMI .initialize()), False for step by step.
+t_range: # None for sequence mode, but needed for step by step as an upper limit. 
+
+
+
+## Model Config -------------------------------#
+pnn_model: LSTM    # LSTM, MLP
+hydro_models: [HBV]    # HBV,PRMS, SACSMA_with_snow
+dy_params:
+    HBV: [parBETA, parBETAET, parK0]    # parBETA, parBETAET
+    HBV_capillary: [parBETA, parBETAET, parK0]
+    SACSMA: []
+    PRMS: []
+
+dy_drop: 0.0  # 0.0 always dynamic; 1.0 always static
+routing_hydro_model: True
+pet_module: dataset    # dataset, potet_hamon, potet_hargreaves
+pet_dataset_name: PET_hargreaves(mm/day)
+target: ['00060_Mean']    # 00060_Mean, 00010_Mean, BFI_AVE, PET
+use_log_norm: ['prcp(mm/day)']  #['prcp(mm/day)']  # For applying log normalization. ([] for HBV1.1p)
+
+loss_function: RmseLossFlowComb  # RmseLossFlowComb, NseSqrtLossFlow, NseLossBatchFlow (for HBV1.1p)
+loss_function_weights:
+    w1: 11.0
+    w2: 1.0
+
+nmul: 16
+warm_up: 365
+rho: 365 
+batch_size: 100
+epochs: 50
+dropout: 0.5
+hidden_size: 256
+learning_rate: 1
+nearzero: 0.0001 # Without hydra, 1e-4 is interpreted as a string?
+
+
+## Observations -------------------------------#
+# Traditionally hydra is used to load observations into config, but we can't use
+# Hydra with BMI, so we cp-paste here.
+observations:
+    name: camels_671_dp_2024
+    gage_info: None
+    forcing_path: /scratch/fzr5082/PGML_STemp_results/inputs/dataset_20240331/camels_671_dp_20240331.feather
+    attr_path: /scratch/fzr5082/PGML_STemp_results/inputs/dataset_20240331/attr_camels_all_sep14_2023.feather
+
+
+    var_t_nn: [
+    'prcp(mm/day)',
+    'tmean(C)',
+    'dayl(s)',
+    'PET_hargreaves(mm/day)'
+    ]
+    var_c_nn: [
+    'p_mean',
+    'pet_mean',
+    'p_seasonality',
+    'frac_snow',
+    'aridity',
+    'high_prec_freq',
+    'high_prec_dur',
+    'low_prec_freq',
+    'low_prec_dur',
+    'elev_mean',
+    'slope_mean',
+    'area_gages2',
+    'frac_forest',
+    'lai_max',
+    'lai_diff',
+    'gvf_max',
+    'gvf_diff',
+    'dom_land_cover_frac',
+    'dom_land_cover',
+    'root_depth_50',
+    'soil_depth_pelletier',
+    'soil_depth_statsgo',
+    'soil_porosity',
+    'soil_conductivity',
+    'max_water_content',
+    'sand_frac',
+    'silt_frac',
+    'clay_frac',
+    'geol_1st_class',
+    'glim_1st_class_frac',
+    'geol_2nd_class',
+    'glim_2nd_class_frac',
+    'carbonate_rocks_frac',
+    'geol_porosity',
+    'geol_permeability'
+    ]
+    var_t_hydro_model: [
+    'prcp(mm/day)',
+    'tmean(C)',
+    'PET_hargreaves(mm/day)'
+    ]
+    var_c_hydro_model: [
+    'DRAIN_SQKM',
+    'lat'
+    ]

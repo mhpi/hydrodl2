@@ -164,3 +164,7 @@ cython_debug/
 
 # VCS versioning
 src/hydroDL2/_version.py
+
+# Other
+*sacsma*
+validation/

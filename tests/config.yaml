@@ -42,7 +42,7 @@ dpl_model:
     dy_drop: 0.0
     
 phy_model:
-    models: [HBV]  # HBV, hbv_11p (1.1p), marrmot_PRMS, SACSMA_with_snow
+    models: [HBV]  # HBV, hbv_11p (1.1p), PRMS, SACSMA_with_snow
     warm_up: 365
     stat_param_idx: -1
     dy_params:

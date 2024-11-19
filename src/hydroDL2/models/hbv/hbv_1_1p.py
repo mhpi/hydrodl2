@@ -6,8 +6,9 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBV(torch.nn.Module):
-    """Multi-component Pytorch HBV model.
+class HBVCapillary(torch.nn.Module):
+    """Multi-component Pytorch HBV1.1p model with capillary rise modification
+    and option to run without warmup.
 
     Adapted from Farshid Rahmani, Yalan Song.
 
@@ -19,6 +20,8 @@ class HBV(torch.nn.Module):
         self.config = config
         self.initialize = False
         self.warm_up = 0
+        self.pred_cutoff = 0
+        self.warm_up_states = False
         self.static_idx = self.warm_up - 1
         self.dy_params = []
         self.dy_drop = 0.0
@@ -40,7 +43,9 @@ class HBV(torch.nn.Module):
             'parTT': [-2.5, 2.5],
             'parCFMAX': [0.5, 10],
             'parCFR': [0, 0.1],
-            'parCWH': [0, 0.2]
+            'parCWH': [0, 0.2],
+            'parBETAET': [0.3, 5],
+            'parC': [0, 1]
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
@@ -53,17 +58,16 @@ class HBV(torch.nn.Module):
         if config is not None:
             # Overwrite defaults with config values.
             self.warm_up = config['phy_model']['warm_up']
+            self.pred_cutoff = self.warm_up
+            self.warm_up_states = config['phy_model']['warm_up_states']
             self.static_idx = config['phy_model']['stat_param_idx']
             self.dy_drop = config['dy_drop']
-            self.dy_params = config['phy_model']['dy_params']['HBV']
+            self.dy_params = config['phy_model']['dy_params']['HBV_1_1p']
             self.variables = config['phy_model']['forcings']
             self.routing = config['phy_model']['routing']
             self.comprout = config['phy_model'].get('comprout', self.comprout)
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
-
-            if 'parBETAET' in self.dy_params :
-                self.parameter_bounds['parBETAET'] = [0.3, 5]
 
         self.set_parameters()
 
@@ -147,16 +151,20 @@ class HBV(torch.nn.Module):
             x_dict: Dict[str, torch.Tensor],
             parameters: torch.Tensor
         ) -> Union[Tuple, Dict[str, torch.Tensor]]:
-        """Forward pass for HBV."""
+        """Forward pass for HBV1.1p."""
         # Unpack input data.
         x = x_dict['x_phy']
         muwts = x_dict.get('muwts', None)
 
         # Initialization
+        if not self.warm_up_states:
+            # No state warm up - run the full model for warm_up days.
+            self.warm_up = 0
+        
         if self.warm_up > 0:
             with torch.no_grad():
                 x_init = {'x_phy': x[0:self.warm_up, :, :]}
-                init_model = HBV(self.config, device=self.device)
+                init_model = HBVCapillary(self.config, device=self.device)
 
                 # Defaults for warm-up.
                 init_model.initialize = True
@@ -221,6 +229,7 @@ class HBV(torch.nn.Module):
         tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        capillary_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
         param_dict = full_param_dict.copy()
         for t in range(n_steps):
@@ -267,14 +276,18 @@ class HBV(torch.nn.Module):
             excess = SM - param_dict['parFC']
             excess = torch.clamp(excess, min=0.0)
             SM = SM - excess
-            # parBETAET only has effect when it is a dynamic parameter (=1 otherwise).
-            evapfactor = (SM / (param_dict['parLP'] * param_dict['parFC']))
-            if 'parBETAET' in param_dict:
-                evapfactor = evapfactor ** param_dict['parBETAET']
+            # NOTE: Different from HBV 1.0. Add static/dynamicET shape parameter parBETAET.
+            evapfactor = (SM / (param_dict['parLP'] * param_dict['parFC'])) ** param_dict['parBETAET']
             evapfactor = torch.clamp(evapfactor, min=0.0, max=1.0)
             ETact = PETm[t, :, :] * evapfactor
             ETact = torch.min(SM, ETact)
             SM = torch.clamp(SM - ETact, min=self.nearzero)
+
+            # Capillary rise (HBV 1.1p mod) -------------------------------
+            capillary = torch.min(SLZ, param_dict['parC'] * SLZ * (1.0 - torch.clamp(SM / param_dict['parFC'], max=1.0)))
+
+            SM = torch.clamp(SM + capillary, min=self.nearzero)
+            SLZ = torch.clamp(SLZ - capillary, min=self.nearzero)
 
             # Groundwater boxes -------------------------------
             SUZ = SUZ + recharge + excess
@@ -294,6 +307,7 @@ class HBV(torch.nn.Module):
             Q2_sim[t, :, :] = Q2
             AET[t, :, :] = ETact
             SWE_sim[t, :, :] = SNOWPACK
+            capillary_sim[t, :, :] = capillary
 
             recharge_sim[t, :, :] = recharge
             excs_sim[t, :, :] = excess
@@ -355,7 +369,7 @@ class HBV(torch.nn.Module):
                 torch.sum(Qs, dim=0) + self.nearzero))[:,0]
 
             # Return all sim results.
-            return {
+            out_dict = {
                 'flow_sim': Qs,
                 'srflow': Q0_rout,
                 'ssflow': Q1_rout,
@@ -372,5 +386,11 @@ class HBV(torch.nn.Module):
                 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
                 'tosoil': tosoil_sim.mean(-1, keepdim=True),
                 'percolation': PERC_sim.mean(-1, keepdim=True),
+                'capillary': capillary_sim.mean(-1, keepdim=True),
                 'BFI_sim': BFI_sim.mean(-1, keepdim=True)   
             }
+            
+            if not self.warm_up_states:
+                for key in out_dict.keys():
+                    out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
+            return out_dict
