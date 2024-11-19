@@ -1,9 +1,9 @@
+from typing import Dict, Tuple, Union
+
 import torch
 
 from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
-from typing import Dict, Tuple, Union
-
 
 
 class HBV(torch.nn.Module):
