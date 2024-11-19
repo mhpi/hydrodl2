@@ -2,6 +2,8 @@ import torch
 
 from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
+from typing import Dict, Tuple, Union
+
 
 
 class PRMS(torch.nn.Module):
@@ -19,10 +21,9 @@ class PRMS(torch.nn.Module):
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
         self.routing = False
-        self.comprout = False
         self.nearzero = 1e-5
         self.nmul = 1
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device
         self.parameter_bounds = {
             'tt': [-3, 5],    # tt, Temperature threshold for snowfall and melt [oC]
             'ddf': [0, 20],    # ddf,  Degree-day factor for snowmelt [mm/oC/d]
@@ -40,17 +41,17 @@ class PRMS(torch.nn.Module):
             'k2': [1, 5],    # k2, Groundwater drainage non-linearity [-]
             'k3': [0, 1],    # k3, Interflow coefficient 1 [d-1]
             'k4': [0, 1],    # k4, Interflow coefficient 2 [mm-1 d-1]
-            k5: [0, 1],    # k5, Baseflow coefficient [d-1]
+            'k5': [0, 1],    # k5, Baseflow coefficient [d-1]
             'k6': [0, 1],    # k6, Groundwater sink coefficient [d-1],
         }
-        self.conv_routing_hydro_model_bound = [
-            [0, 2.9],  # routing parameter a
-            [0, 6.5]   # routing parameter b
-        ]
+        self.routing_parameter_bounds = {
+            'rout_a': [0, 2.9],
+            'rout_b': [0, 6.5]
+        }
 
-        if device is None:
+        if not device:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            
+
         if config is not None:
             # Overwrite defaults with config values.
             self.warm_up = config['phy_model']['warm_up']
@@ -62,14 +63,97 @@ class PRMS(torch.nn.Module):
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
 
-    def forward(self, x, parameters, routing_parameters=None, muwts=None,
-                comprout=False):
+        self.set_parameters()
+
+    def set_parameters(self):
+        """Get HBV model parameters."""
+        phy_params = self.parameter_bounds.keys()
+        if self.routing == True:
+            rout_params = self.routing_parameter_bounds.keys()
+        else:
+            rout_params = []
+        
+        self.all_parameters = list(phy_params) + list(rout_params)
+        self.learnable_param_count = len(phy_params) * self.nmul + len(rout_params)
+
+    def unpack_parameters(
+            self,
+            parameters: torch.Tensor,
+            n_steps: int,
+            n_grid: int
+        ) -> Dict:
+        """Extract physics model parameters from NN output.
+        
+        Parameters
+        ----------
+        parameters : torch.Tensor
+            Unprocessed, learned parameters from a neural network.
+        n_steps : int
+            Number of time steps in the input data.
+        """
+        phy_param_count = len(self.parameter_bounds)
+        
+        # Physical parameters
+        phy_params = torch.sigmoid(
+            parameters[:, :, :phy_param_count * self.nmul]).view(
+                parameters.shape[0],
+                parameters.shape[1],
+                phy_param_count,
+                self.nmul
+            )
+        # Routing parameters
+        if self.routing == True:
+            routing_params = torch.sigmoid(
+                parameters[-1, :, phy_param_count * self.nmul:]
+            )
+
+        # Precompute probability mask for dynamic parameters
+        if len(self.dy_params) > 0:
+            pmat = torch.ones([n_grid, 1]) * self.dy_drop
+
+        parameter_dict = {}
+        for i, name in enumerate(self.all_parameters):
+            if i < phy_param_count:
+                # Physical parameters
+                param = phy_params[self.static_idx, :, i, :]
+
+                if name in self.dy_params:
+                    # Make the parameter dynamic
+                    drmask = torch.bernoulli(pmat).detach_().to(self.device)
+                    dynamic_param = phy_params[:, :, i, :]
+
+                    # Allow chance for dynamic parameter to be static
+                    static_param = param.unsqueeze(0).repeat([dynamic_param.shape[0], 1, 1])
+                    param = dynamic_param * (1 - drmask) + static_param * drmask
+                
+                parameter_dict[name] = change_param_range(
+                    param=param,
+                    bounds=self.parameter_bounds[name]
+                )
+            elif self.routing:
+                # Routing parameters
+                parameter_dict[name] = change_param_range(
+                    param=routing_params[:, i - phy_param_count],
+                    bounds=self.routing_parameter_bounds[name]
+                ).repeat(n_steps, 1).unsqueeze(-1)
+            else:
+                break
+        return parameter_dict
+
+    def forward(
+            self,
+            x_dict: Dict[str, torch.Tensor],
+            parameters: torch.Tensor
+        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
         """Forward pass for PRMS."""
+        # Unpack input data.
+        x = x_dict['x_phy']
+
         # Initialization
         if self.warm_up > 0:
             with torch.no_grad():
-                x_init = x[0:self.warm_up, :, :]
-                init_model = PRMS(self.config).to(self.device)
+                x_init = {'x_phy': x[0:self.warm_up, :, :]}
+                init_model = PRMS(self.config, device=self.device)
 
                 # Defaults for warm-up.
                 init_model.initialize = True
@@ -77,16 +161,13 @@ class PRMS(torch.nn.Module):
                 init_model.static_idx = self.warm_up-1
                 init_model.muwts = None
                 init_model.routing = False
-                init_model.comprout = False
                 init_model.dy_params = []
+
                 Q_init, snow_storage, XIN_storage, RSTOR_storage, \
                     RECHR_storage, SMAV_storage, \
                     RES_storage, GW_storage = init_model(
                     x_init,
-                    parameters,
-                    routing_parameters,
-                    muwts=None,
-                    comprout=False
+                    parameters
                 )
         else:
             # Without warm-up, initialize state variables with zeros.
@@ -120,13 +201,6 @@ class PRMS(torch.nn.Module):
             GW_storage = torch.zeros([n_grid, self.nmul],
                                      dtype=torch.float32,
                                      device=self.device) + 0.001
-        # Parameters
-        params_dict_raw = dict()
-        for num, param in enumerate(self.parameter_bounds.keys()):
-            params_dict_raw[param] = change_param_range(
-                param=parameters[:, :, num, :],
-                bounds=self.parameter_bounds[param]
-            )
 
         # Forcings
         P = x[self.warm_up:, :, self.variables.index('prcp')]  # Precipitation
@@ -140,8 +214,11 @@ class PRMS(torch.nn.Module):
 
         n_steps, n_grid = P.size()
 
+        # Parameters
+        full_param_dict = self.unpack_parameters(parameters, n_steps, n_grid)
+
         # AET = PET_coef * PET
-        # initialize the Q_sim and other fluxes
+        # Initialize time series of model variables in shape [time, basins, nmul].
         Q_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         sas_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         sro_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
@@ -157,33 +234,15 @@ class PRMS(torch.nn.Module):
         ea_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         qres_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
-        # Init static parameters
-        params_dict = dict()
-        for key in params_dict_raw.keys():
-            if key not in self.dy_params: # and len(params_raw.shape) > 2:
-                # Use the last day of data as static parameter's value.
-                params_dict[key] = params_dict_raw[key][self.static_idx, :, :]
-
-        # Init dynamic parameters
-        # (Use a dydrop ratio: fix a probability mask for setting dynamic params
-        # as static in some basins.)
-        if len(self.dy_params) > 0:
-            params_dict_raw_dy = dict()
-            pmat = torch.ones([n_grid, 1]) * self.dy_drop
-            for i, key in enumerate(self.dy_params):
-                drmask = torch.bernoulli(pmat).detach_().to(self.device)
-                dynPar = params_dict_raw[key]
-                staPar = params_dict_raw[key][self.static_idx, :, :].unsqueeze(0).repeat([dynPar.shape[0], 1, 1])
-                params_dict_raw_dy[key] = dynPar * (1 - drmask) + staPar * drmask
-
+        param_dict = full_param_dict.copy()
         for t in range(n_steps):
             # Get dynamic parameter values per timestep.
             for key in self.dy_params:
-                params_dict[key] = params_dict_raw_dy[key][self.warm_up + t, :, :]
+                param_dict[key] = full_param_dict[key][self.warm_up + t, :, :]
 
-            scn = params_dict['fscn'] * params_dict['scx']
-            remx = (1 - params_dict['flz']) * params_dict['stot']
-            smax = params_dict['flz'] * params_dict['stot']
+            scn = param_dict['fscn'] * param_dict['scx']
+            remx = (1 - param_dict['flz']) * param_dict['stot']
+            smax = param_dict['flz'] * param_dict['stot']
 
             delta_t = 1  # timestep (day)
             PRECIP = Pm[t, :, :]
@@ -191,38 +250,38 @@ class PRMS(torch.nn.Module):
             temp = Tm[t, :, :]
 
             # Fluxes
-            flux_ps = torch.mul(PRECIP, (temp <= params_dict['tt']).type(torch.float32))
-            flux_pr = torch.mul(PRECIP, (temp > params_dict['tt']).type(torch.float32))
+            flux_ps = torch.mul(PRECIP, (temp <= param_dict['tt']).type(torch.float32))
+            flux_pr = torch.mul(PRECIP, (temp > param_dict['tt']).type(torch.float32))
             snow_storage = snow_storage + flux_ps
-            flux_m = torch.clamp(params_dict['ddf'] * (temp - params_dict['tt']), min=0.0)
+            flux_m = torch.clamp(param_dict['ddf'] * (temp - param_dict['tt']), min=0.0)
             flux_m = torch.min(flux_m, snow_storage/delta_t)
             # flux_m = torch.clamp(flux_m, min=0.0)
             snow_storage = torch.clamp(snow_storage - flux_m, min=self.nearzero)
 
-            flux_pim = flux_pr * (1 - params_dict['beta'])
-            flux_psm = flux_pr * params_dict['beta']
-            flux_pby = flux_psm * (1 - params_dict['alpha'])
-            flux_pin = flux_psm * params_dict['alpha']
+            flux_pim = flux_pr * (1 - param_dict['beta'])
+            flux_psm = flux_pr * param_dict['beta']
+            flux_pby = flux_psm * (1 - param_dict['alpha'])
+            flux_pin = flux_psm * param_dict['alpha']
 
             XIN_storage = XIN_storage + flux_pin
-            flux_ptf = XIN_storage - params_dict['stor']
+            flux_ptf = XIN_storage - param_dict['stor']
             flux_ptf = torch.clamp(flux_ptf, min=0.0)
             XIN_storage = torch.clamp(XIN_storage - flux_ptf, min=self.nearzero)
-            evap_max_in = Ep * params_dict['beta']   # only can happen in pervious area
+            evap_max_in = Ep * param_dict['beta']   # only can happen in pervious area
             flux_ein = torch.min(evap_max_in, XIN_storage/delta_t)
             XIN_storage = torch.clamp(XIN_storage - flux_ein, min=self.nearzero)
 
-            flux_mim = flux_m * (1 - params_dict['beta'])
-            flux_msm = flux_m * params_dict['beta']
+            flux_mim = flux_m * (1 - param_dict['beta'])
+            flux_msm = flux_m * param_dict['beta']
             RSTOR_storage = RSTOR_storage + flux_mim + flux_pim
-            flux_sas = RSTOR_storage - params_dict['retip']
+            flux_sas = RSTOR_storage - param_dict['retip']
             flux_sas = torch.clamp(flux_sas, min=0.0)
             RSTOR_storage = torch.clamp(RSTOR_storage - flux_sas, min=self.nearzero)
-            evap_max_im = (1 - params_dict['beta']) * Ep
+            evap_max_im = (1 - param_dict['beta']) * Ep
             flux_eim = torch.min(evap_max_im, RSTOR_storage / delta_t)
             RSTOR_storage = torch.clamp(RSTOR_storage - flux_eim, min=self.nearzero)
 
-            sro_lin_ratio = scn + (params_dict['scx'] - scn) * (RECHR_storage / remx)
+            sro_lin_ratio = scn + (param_dict['scx'] - scn) * (RECHR_storage / remx)
             sro_lin_ratio = torch.clamp(sro_lin_ratio, min=0.0, max=1.0)
             flux_sro = sro_lin_ratio * (flux_msm + flux_ptf + flux_pby)
             flux_inf = flux_msm + flux_ptf + flux_pby - flux_sro
@@ -245,14 +304,14 @@ class PRMS(torch.nn.Module):
             transp = torch.clamp(transp, min=0.0)    # in case Ep - flux_ein - flux_eim - flux_ea was negative
             SMAV_storage = torch.clamp(SMAV_storage - transp, min=self.nearzero)
 
-            flux_sep = torch.min(params_dict['cgw'], flux_excs)
+            flux_sep = torch.min(param_dict['cgw'], flux_excs)
             flux_qres = torch.clamp(flux_excs - flux_sep, min=0.0)
 
             RES_storage = RES_storage + flux_qres
-            flux_gad = params_dict['k1'] * ((RES_storage / params_dict['resmax']) ** params_dict['k2'])
+            flux_gad = param_dict['k1'] * ((RES_storage / param_dict['resmax']) ** param_dict['k2'])
             flux_gad = torch.min(flux_gad, RES_storage)
             RES_storage = torch.clamp(RES_storage - flux_gad, min=self.nearzero)
-            flux_ras = params_dict['k3'] * RES_storage + params_dict['k4'] * (RES_storage ** 2)
+            flux_ras = param_dict['k3'] * RES_storage + param_dict['k4'] * (RES_storage ** 2)
             flux_ras = torch.min(flux_ras, RES_storage)
             RES_storage = torch.clamp(RES_storage - flux_ras, min=self.nearzero)
             # RES_excess = RES_storage - resmax[:, t, :]   # if there is still overflow, it happend in discrete version
@@ -262,9 +321,9 @@ class PRMS(torch.nn.Module):
 
 
             GW_storage = GW_storage + flux_gad + flux_sep
-            flux_bas = params_dict['k5'] * GW_storage
+            flux_bas = param_dict['k5'] * GW_storage
             GW_storage = torch.clamp(GW_storage - flux_bas, min=self.nearzero)
-            flux_snk = params_dict['k6'] * GW_storage
+            flux_snk = param_dict['k6'] * GW_storage
             GW_storage = torch.clamp(GW_storage - flux_snk, min=self.nearzero)
 
             Q_sim[t, :, :] = (flux_sas + flux_sro + flux_bas + flux_ras)
@@ -281,19 +340,8 @@ class PRMS(torch.nn.Module):
             ea_sim[t, :, :] = flux_ea
             qres_sim[t, :, :] = flux_qres
 
-        if self.routing == True:
-            temp_a = change_param_range(
-                param=routing_parameters[:, 0],
-                bounds=self.conv_routing_hydro_model_bound[0]
-            )
-            temp_b = change_param_range(
-                param=routing_parameters[:, 1],
-                bounds=self.conv_routing_hydro_model_bound[1]
-            )
-            rout_a = temp_a.repeat(n_steps, 1).unsqueeze(-1)
-            rout_b = temp_b.repeat(n_steps, 1).unsqueeze(-1)
-
-            UH = UH_gamma(rout_a, rout_b, lenF=15)  # lenF: folter
+        if self.routing:
+            UH = UH_gamma(param_dict['rout_a'], param_dict['rout_b'], lenF=15)
             rf = Q_sim.mean(-1, keepdim=True).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
             Qsrout = UH_conv(rf, UH).permute([2, 0, 1])

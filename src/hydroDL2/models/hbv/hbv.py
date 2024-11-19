@@ -1,9 +1,9 @@
-from pytest import param
 import torch
 
 from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
-from typing import Dict
+from typing import Dict, Tuple, Union
+
 
 
 class HBV(torch.nn.Module):
@@ -46,7 +46,7 @@ class HBV(torch.nn.Module):
             'rout_a': [0, 2.9],
             'rout_b': [0, 6.5]
         }
-        
+
         if not device:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -142,12 +142,16 @@ class HBV(torch.nn.Module):
                 break
         return parameter_dict
 
-    def forward(self, x_dict, parameters):
+    def forward(
+            self,
+            x_dict: Dict[str, torch.Tensor],
+            parameters: torch.Tensor
+        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
         """Forward pass for HBV."""
         # Unpack input data.
         x = x_dict['x_phy']
         muwts = x_dict.get('muwts', None)
-        
+
         # Initialization
         if self.warm_up > 0:
             with torch.no_grad():
@@ -165,7 +169,7 @@ class HBV(torch.nn.Module):
 
                 Qsinit, SNOWPACK, MELTWATER, SM, SUZ, SLZ = init_model(
                     x_init,
-                    parameters,
+                    parameters
                 )
         else:
             # Without warm-up, initialize state variables with zeros.
@@ -198,8 +202,8 @@ class HBV(torch.nn.Module):
 
         n_steps, n_grid = P.size()
 
-        param_dict = self.unpack_parameters(parameters, n_steps, n_grid)
-
+        # Parameters
+        full_param_dict = self.unpack_parameters(parameters, n_steps, n_grid)
 
         # Apply correction factor to precipitation
         # P = parPCORR.repeat(n_steps, 1) * P
@@ -218,28 +222,28 @@ class HBV(torch.nn.Module):
         PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
-        t_param_dict = param_dict.copy()
+        param_dict = full_param_dict.copy()
         for t in range(n_steps):
             # Get dynamic parameter values per timestep.
             for key in self.dy_params:
-                t_param_dict[key] = param_dict[key][self.warm_up + t, :, :]
+                param_dict[key] = full_param_dict[key][self.warm_up + t, :, :]
 
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
-            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= t_param_dict['parTT']).type(torch.float32))
-            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < t_param_dict['parTT']).type(torch.float32))
+            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= param_dict['parTT']).type(torch.float32))
+            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < param_dict['parTT']).type(torch.float32))
 
             # Snow -------------------------------
             SNOWPACK = SNOWPACK + SNOW
-            melt = t_param_dict['parCFMAX'] * (Tm[t, :, :] - t_param_dict['parTT'])
+            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - param_dict['parTT'])
             # melt[melt < 0.0] = 0.0
             melt = torch.clamp(melt, min=0.0)
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
             melt = torch.min(melt, SNOWPACK)
             MELTWATER = MELTWATER + melt
             SNOWPACK = SNOWPACK - melt
-            refreezing = t_param_dict['parCFR'] * t_param_dict['parCFMAX'] * (
-                t_param_dict['parTT'] - Tm[t, :, :]
+            refreezing = param_dict['parCFR'] * param_dict['parCFMAX'] * (
+                param_dict['parTT'] - Tm[t, :, :]
                 )
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
@@ -247,12 +251,12 @@ class HBV(torch.nn.Module):
             refreezing = torch.min(refreezing, MELTWATER)
             SNOWPACK = SNOWPACK + refreezing
             MELTWATER = MELTWATER - refreezing
-            tosoil = MELTWATER - (t_param_dict['parCWH'] * SNOWPACK)
+            tosoil = MELTWATER - (param_dict['parCWH'] * SNOWPACK)
             tosoil = torch.clamp(tosoil, min=0.0)
             MELTWATER = MELTWATER - tosoil
 
             # Soil and evaporation -------------------------------
-            soil_wetness = (SM / t_param_dict['parFC']) ** t_param_dict['parBETA']
+            soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
             # soil_wetness[soil_wetness < 0.0] = 0.0
             # soil_wetness[soil_wetness > 1.0] = 1.0
             soil_wetness = torch.clamp(soil_wetness, min=0.0, max=1.0)
@@ -260,13 +264,13 @@ class HBV(torch.nn.Module):
 
             SM = SM + RAIN + tosoil - recharge
 
-            excess = SM - t_param_dict['parFC']
+            excess = SM - param_dict['parFC']
             excess = torch.clamp(excess, min=0.0)
             SM = SM - excess
             # parBETAET only has effect when it is a dynamic parameter (=1 otherwise).
-            evapfactor = (SM / (t_param_dict['parLP'] * t_param_dict['parFC']))
-            if 'parBETAET' in t_param_dict:
-                evapfactor = evapfactor ** t_param_dict['parBETAET']
+            evapfactor = (SM / (param_dict['parLP'] * param_dict['parFC']))
+            if 'parBETAET' in param_dict:
+                evapfactor = evapfactor ** param_dict['parBETAET']
             evapfactor = torch.clamp(evapfactor, min=0.0, max=1.0)
             ETact = PETm[t, :, :] * evapfactor
             ETact = torch.min(SM, ETact)
@@ -274,14 +278,14 @@ class HBV(torch.nn.Module):
 
             # Groundwater boxes -------------------------------
             SUZ = SUZ + recharge + excess
-            PERC = torch.min(SUZ, t_param_dict['parPERC'])
+            PERC = torch.min(SUZ, param_dict['parPERC'])
             SUZ = SUZ - PERC
-            Q0 = t_param_dict['parK0'] * torch.clamp(SUZ - t_param_dict['parUZL'], min=0.0)
+            Q0 = param_dict['parK0'] * torch.clamp(SUZ - param_dict['parUZL'], min=0.0)
             SUZ = SUZ - Q0
-            Q1 = t_param_dict['parK1'] * SUZ
+            Q1 = param_dict['parK1'] * SUZ
             SUZ = SUZ - Q1
             SLZ = SLZ + PERC
-            Q2 = t_param_dict['parK2'] * SLZ
+            Q2 = param_dict['parK2'] * SLZ
             SLZ = SLZ - Q2
 
             Qsimmu[t, :, :] = Q0 + Q1 + Q2
@@ -349,7 +353,7 @@ class HBV(torch.nn.Module):
             # Baseflow index (BFI) calculation
             BFI_sim = 100 * (torch.sum(Q2_rout, dim=0) / (
                 torch.sum(Qs, dim=0) + self.nearzero))[:,0]
-            
+
             # Return all sim results.
             return {
                 'flow_sim': Qs,
