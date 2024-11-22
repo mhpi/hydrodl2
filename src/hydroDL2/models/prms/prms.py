@@ -380,7 +380,7 @@ class PRMS(torch.nn.Module):
                 'ssflow': Qras_rout,
                 'gwflow': Qbas_rout,
                 'sink': torch.mean(snk_sim, -1).unsqueeze(-1),
-                'PET_hydro': PET.mean(-1, keepdim=True),
+                'PET_hydro': PETm.mean(-1, keepdim=True),
                 'AET_hydro': AET.mean(-1, keepdim=True),
                 'flow_sim_no_rout': Q_sim.mean(-1, keepdim=True),
                 'srflow_no_rout': (sas_sim + sro_sim).mean(-1, keepdim=True),
