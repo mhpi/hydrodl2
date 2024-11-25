@@ -5,7 +5,7 @@ requires = ["hatchling", "hatch-vcs"]
 [project]
 name = "hydroDL2"
 description = "Hydrology models and modules manager"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 license = {file = "LICENSE"}
 authors = [
     {name = "Leo Lonzarich"},
