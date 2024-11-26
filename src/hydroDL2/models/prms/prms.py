@@ -343,14 +343,7 @@ class PRMS(torch.nn.Module):
         if self.routing:
             UH = UH_gamma(param_dict['rout_a'], param_dict['rout_b'], lenF=15)
             rf = Q_sim.mean(-1, keepdim=True).permute([1, 2, 0])  # [gages,vars,time]
-            UH = UH.permute([1, 2, 0])  # [gages,vars,time]
-            Qsrout = UH_conv(rf, UH).permute([2, 0, 1])
-
-            rf_sas = sas_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Qsas_rout = UH_conv(rf_sas, UH).permute([2, 0, 1])
-
-            rf_sro = sro_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Qsro_rout = UH_conv(rf_sro, UH).permute([2, 0, 1])
+            UH = UH.permute([1, 2, 0])  # [gages,vars,time]d)
 
             rf_ras = ras_sim.mean(-1, keepdim=True).permute([1, 2, 0])
             Qras_rout = UH_conv(rf_ras, UH).permute([2, 0, 1])

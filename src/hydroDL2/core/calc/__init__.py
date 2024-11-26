@@ -4,7 +4,20 @@ import torch
 
 
 def change_param_range(param: torch.Tensor, bounds: List[float]) -> torch.Tensor:
-    """Change the range of a parameter to the specified bounds."""
+    """Change the range of a parameter to the specified bounds.
+    
+    Parameters
+    ----------
+    param : torch.Tensor
+        The parameter.
+    bounds : List[float]
+        The parameter bounds.
+    
+    Returns
+    -------
+    out : torch.Tensor
+        The parameter with the specified bounds.
+    """
     out = param * (bounds[1] - bounds[0]) + bounds[0]
     return out
 
