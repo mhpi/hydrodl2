@@ -121,7 +121,10 @@ def load_model(model: str, ver_name: str = None) -> Module:
         cls = getattr(module, ver_name)
     else:
         # Find the first class in the module (this may not always be accurate)
-        classes = [attr for attr in dir(module) if isinstance(getattr(module, attr), type)]
+        classes = [
+            attr for attr in dir(module)
+            if isinstance(getattr(module, attr), type) and attr != 'Any'
+        ]
         if not classes:
             raise ImportError(f"Model version '{model}' not found.")
         cls = getattr(module, classes[0])

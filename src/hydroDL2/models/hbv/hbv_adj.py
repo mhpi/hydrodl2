@@ -1,20 +1,38 @@
-from typing import Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
+import sourcedefender
 import torch
 
 from hydroDL2.core.calc import change_param_range
+from hydroDL2.core.calc.batch_jacobian import batchJacobian
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
-import sourcedefender
-from hydroDL2.core.calc.batchJacobian import batchJacobian 
 
-class HBV_adj(torch.nn.Module):
-    """Multi-component Pytorch HBV model using implicit numerical scheme and gradient tracking is supported by adjoint.
-    Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K. E., & Shen, C. (2024). 
-    When ancient numerical demons meet physics-informed machine learning: Adjoint-based 
-    gradients for implicit differentiable modeling. 
-    Hydrology and Earth System Sciences Discussions, 1–35. https://doi.org/10.5194/hess-2023-258
+
+class HBVAdjoint(torch.nn.Module):
     """
-    def __init__(self, config=None, device=None):
+    Multi-component Pytorch HBV model using implicit numerical scheme and
+    gradient tracking is supported by adjoint.
+    
+    See Publication:
+        Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K. E.,
+        & Shen, C. (2024). 
+        When ancient numerical demons meet physics-informed machine learning:
+        Adjoint-based gradients for implicit differentiable modeling. 
+        Hydrology and Earth System Sciences Discussions, 1–35.
+        https://doi.org/10.5194/hess-2023-258
+
+    Parameters
+    ----------
+    config : dict, optional
+        Configuration dictionary.
+    device : torch.device, optional
+        Device to run the model on.
+    """
+    def __init__(
+            self,
+            config: Optional[Dict[str, Any]] = None,
+            device: Optional[torch.device] = None
+        ) -> None:
         super().__init__()
         self.config = config
         self.initialize = False
@@ -52,9 +70,8 @@ class HBV_adj(torch.nn.Module):
         if config is not None:
             # Overwrite defaults with config values.
             self.warm_up = config['phy_model']['warm_up']
-            self.static_idx = config['phy_model']['stat_param_idx']
             self.dy_drop = config['dy_drop']
-            self.dy_params = config['phy_model']['dy_params']['HBV']
+            self.dy_params = config['phy_model']['dy_params']['HBV_adj']
             self.variables = config['phy_model']['forcings']
             self.routing = config['phy_model']['routing']
             self.comprout = config['phy_model'].get('comprout', self.comprout)
@@ -66,24 +83,24 @@ class HBV_adj(torch.nn.Module):
 
         self.set_parameters()
 
-    def set_parameters(self):
-        """Get HBV model parameters."""
-        self.phy_params_name = self.parameter_bounds.keys()
+    def set_parameters(self) -> None:
+        """Get physical parameters."""
+        self.phy_param_names = self.parameter_bounds.keys()
         if self.routing == True:
-            self.rout_params_name = self.routing_parameter_bounds.keys()
+            self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
-            self.rout_params_name = []
-        self.learnable_param_count = len( self.phy_params_name) * self.nmul + len( self.rout_params_name)
-        
+            self.routing_param_names = []
 
+        self.learnable_param_count = len(self.phy_param_names) * self.nmul \
+            + len(self.routing_param_names)
 
     def unpack_parameters(
             self,
             parameters: torch.Tensor,
             n_steps: int,
             n_grid: int,
-        ) -> Dict:
-        """Extract physics model parameters from NN output.
+        ) -> Dict[str, torch.Tensor]:
+        """Extract physical model and routing parameters from NN output.
         
         Parameters
         ----------
@@ -91,6 +108,12 @@ class HBV_adj(torch.nn.Module):
             Unprocessed, learned parameters from a neural network.
         n_steps : int
             Number of time steps in the input data.
+        n_grid : int
+            Number of grid cells in the input data.
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor]
+            Tuple of physical and routing parameters.
         """
         phy_param_count = len(self.parameter_bounds)
         
@@ -112,12 +135,7 @@ class HBV_adj(torch.nn.Module):
             routing_params = torch.sigmoid(
                 parameters[-1, :, phy_param_count * self.nmul:]
             )
-        parameter_dict = {}
-        parameter_dict['phy_params']  = phy_params
-        parameter_dict['routing_params']  = routing_params
-
-        return parameter_dict
-
+        return phy_params, routing_params
 
     def make_phy_parameters(
             self,
@@ -125,16 +143,22 @@ class HBV_adj(torch.nn.Module):
             name_list: list,
             dy_list:list,
         ) -> torch.Tensor:
-        """Extract physics model parameters from NN output.
+        """Descale physical parameters.
         
         Parameters
         ----------
-        parameters : torch.Tensor
-            Unprocessed, learned parameters from a neural network.
-        n_steps : int
-            Number of time steps in the input data.
+        phy_params : torch.Tensor
+            Normalized physical parameters.
+        name_list : list
+            List of physical parameter names.
+        dy_list : list
+            List of dynamic parameters.
+        
+        Returns
+        -------
+        torch.Tensor
+            Tensor of physical parameters.
         """
-
         n_steps, n_grid, nfea = phy_params.size()
         parstaFull = phy_params[-1, :, :].unsqueeze(0).repeat([n_steps, 1, 1])
         # Precompute probability mask for dynamic parameters
@@ -153,22 +177,25 @@ class HBV_adj(torch.nn.Module):
         else:
             return parstaFull
 
-
     def descale_rout_parameters(
             self,
             rout_params: torch.Tensor,
             name_list: list,
         ) -> torch.Tensor:
-        """Extract physics model parameters from NN output.
+        """Descale routing parameters.
         
         Parameters
         ----------
-        parameters : torch.Tensor
-            Unprocessed, learned parameters from a neural network.
-        n_steps : int
-            Number of time steps in the input data.
+        rout_params : torch.Tensor
+            Normalized routing parameters.
+        name_list : list
+            List of routing parameter names.
+
+        Returns
+        -------
+        dict
+            Dictionary of descaled routing parameters.
         """
-     
 
         parameter_dict = {}
         for i, name in enumerate(name_list):
@@ -178,41 +205,51 @@ class HBV_adj(torch.nn.Module):
                 param=param,
                 bounds=self.routing_parameter_bounds[name]
             )
-
         return parameter_dict
-
 
     def forward(
             self,
             x_dict: Dict[str, torch.Tensor],
             parameters: torch.Tensor
         ) -> Union[Tuple, Dict[str, torch.Tensor]]:
-        """Forward pass for HBV."""
+        """Forward pass for HBV Adj.
+        
+        Parameters
+        ----------
+        x_dict : dict
+            Dictionary of input forcing data.
+        parameters : torch.Tensor
+            Unprocessed, learned parameters from a neural network.
+        
+        Returns
+        -------
+        Union[Tuple, dict]
+            Tuple or dictionary of model outputs.
+        """
         # Unpack input data.
         x = x_dict['x_phy']
 
         n_steps,bs,_ = x.size()
         bsnew = bs * self.nmul
-        param_dict = self.unpack_parameters(parameters, n_steps, bs)
-        phy_params = param_dict['phy_params']
-        routing_params = param_dict['routing_params'] 
+        phy_params, routing_params = self.unpack_parameters(parameters, n_steps, bs)
+
         nS = 5 ## For this version of HBV, we have 5 state varibales
         y_init = torch.zeros((bsnew, nS)).to(self.device)
         nflux = 1 # currently only return streamflow
         delta_t  = torch.tensor(1.0).to(device = self.device)  ## Daily model
         if self.warm_up> 0:
             
-            phy_params_warmup = self.make_phy_parameters(phy_params[:self.warm_up,:,:],self.phy_params_name,[])
+            phy_params_warmup = self.make_phy_parameters(phy_params[:self.warm_up,:,:],self.phy_param_names,[])
             x_warmup = x[:self.warm_up,:,:].unsqueeze(1).repeat([1, self.nmul, 1, 1])
             x_warmup = x_warmup.view(x_warmup.shape[0], bsnew, x_warmup.shape[-1])            
-            f_warm_up = HBV_function(x_warmup, self.parameter_bounds)
+            f_warm_up = HBV(x_warmup, self.parameter_bounds)
             M_warm_up = MOL(f_warm_up, nS, nflux, self.warm_up, bsDefault=bsnew, mtd=0, dtDefault=delta_t,AD_efficient=self.AD_efficient)
             y0 = M_warm_up.nsteps_pDyn(phy_params_warmup, y_init)[-1, :, :]
             
         else:
             y0 = y_init
         
-        phy_params_run = self.make_phy_parameters(phy_params[self.warm_up:,:,:],self.phy_params_name,self.dy_params)
+        phy_params_run = self.make_phy_parameters(phy_params[self.warm_up:,:,:],self.phy_param_names,self.dy_params)
         routy_params_dict = self.descale_rout_parameters(routing_params,self.rout_params_name)
         
         xTrain = x[self.warm_up:,:,:].unsqueeze(1).repeat([1, self.nmul, 1, 1])
@@ -223,12 +260,11 @@ class HBV_adj(torch.nn.Module):
         
         simulation = torch.zeros((nt, bsnew, nflux)).to(self.device)
 
-        f = HBV_function(xTrain, self.parameter_bounds)
+        f = HBV(xTrain, self.parameter_bounds)
         
         M = MOL(f, nS, nflux, nt, bsDefault=bsnew, dtDefault=delta_t, mtd=0,AD_efficient=self.AD_efficient)
         ### Newton iterations with adjoint
         ySolution = M.nsteps_pDyn(phy_params_run, y0)
-
 
         for day in range(0, nt):
             _, flux = f(ySolution[day, :, :], phy_params_run[day, :, :], day)
@@ -252,8 +288,7 @@ class HBV_adj(torch.nn.Module):
             'flow_sim': Qsrout 
         }
 
-
-class HBV_function(torch.nn.Module):
+class HBV(torch.nn.Module):
     def __init__(self, climate_data,parameter_bounds):
         super().__init__()
         self.climate_data = climate_data
@@ -275,7 +310,6 @@ class HBV_function(torch.nn.Module):
         CFR = self.parameter_bounds['parCFR'][0] + theta[:,10]*(self.parameter_bounds['parCFR'][1]-self.parameter_bounds['parCFR'][0])
         CWH = self.parameter_bounds['parCWH'][0] + theta[:,11]*(self.parameter_bounds['parCWH'][1]-self.parameter_bounds['parCWH'][0])
         BETAET = self.parameter_bounds['parBETAET'][0] + theta[:,12]*(self.parameter_bounds['parBETAET'][1]-self.parameter_bounds['parBETAET'][0])
-
 
         PRECS = 0
         ##% stores
@@ -305,7 +339,6 @@ class HBV_function(torch.nn.Module):
         flux_q0   = self.interflow(K0,SUZ,UZL)
         flux_q1   = self.baseflow(K1,SUZ)
         flux_q2   = self.baseflow(K2,SLZ)
-
 
         #% stores ODEs
         dS[:,0] = flux_sf + flux_refr - flux_melt
@@ -367,15 +400,13 @@ class HBV_function(torch.nn.Module):
         return K * S
 
 
-
-
 matrixSolve = torch.linalg.solve
+
+
 class NewtonSolve(torch.autograd.Function):
 
   @staticmethod
   def forward(ctx, p, p2, t,G, x0=None, auxG=None, batchP=True,eval = False,AD_efficient = True):
-
-
     useAD_jac=True
     if x0 is None and p2 is not None:
       x0 = p2
@@ -492,7 +523,6 @@ class NewtonSolve(torch.autograd.Function):
       return dLdp, dLdp2, None,None, None, None, None,None,None
 
 
-
 def batchJacobian_AD_slow(y, x, graphed=False, batchx=True):
     if y.ndim == 1:
         y = y.unsqueeze(1)
@@ -502,7 +532,6 @@ def batchJacobian_AD_slow(y, x, graphed=False, batchx=True):
     def get_vjp(v, yi):
         grads = torch.autograd.grad(outputs=yi, inputs=x, grad_outputs=v,retain_graph=True,create_graph=graphed)
         return grads
-
 
     nx = x.shape[-1]
 
