@@ -1,7 +1,7 @@
 # hydroDL2.0
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![image](https://img.shields.io/pypi/l/ruff.svg)](https://github.com/astral-sh/ruff/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11-blue)]()
+[![image](https://img.shields.io/github/license/saltstack/salt)](https://github.com/mhpi/hydroDL2/blob/master/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11-blue)]()
 [![Actions status](https://github.com/astral-sh/ruff/workflows/CI/badge.svg)](https://github.com/astral-sh/ruff/actions)
 
 <img src="docs/images/hydrodl2_cover_logo.png" alt="hydroOps" width="500" height="500">
