@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple, Union, Optional, Any
 
 import torch
 
@@ -13,8 +13,19 @@ class HBV(torch.nn.Module):
 
     Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
     which runs the HBV-light hydrological model (Seibert, 2005).
+
+    Parameters
+    ----------
+    config : dict, optional
+        Configuration dictionary.
+    device : torch.device, optional
+        Device to run the model on.
     """
-    def __init__(self, config=None, device=None) -> None:
+    def __init__(
+            self,
+            config: Optional[Dict[str, Any]] = None,
+            device: Optional[torch.device] = None
+        ) -> None:
         super().__init__()
         self.config = config
         self.initialize = False
@@ -70,20 +81,20 @@ class HBV(torch.nn.Module):
 
     def set_parameters(self) -> None:
         """Get physical parameters."""
-        phy_params = self.parameter_bounds.keys()
+        self.phy_param_names = self.parameter_bounds.keys()
         if self.routing == True:
-            rout_params = self.routing_parameter_bounds.keys()
+            self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
-            rout_params = []
-        
-        self.all_parameters = list(phy_params) + list(rout_params)
-        self.learnable_param_count = len(phy_params) * self.nmul + len(rout_params)
+            self.routing_param_names = []
+
+        self.learnable_param_count = len(self.phy_param_names) * self.nmul \
+            + len(self.routing_param_names)
 
     def unpack_parameters(
             self,
             parameters: torch.Tensor,
         ) -> Dict[str, torch.Tensor]:
-        """Extract physical model and routing parameters from NN output 1.
+        """Extract physical model and routing parameters from NN output.
         
         Parameters
         ----------
@@ -128,7 +139,7 @@ class HBV(torch.nn.Module):
         
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict
             Dictionary of descaled physical parameters.
         """
         n_steps = phy_params.size(0)
@@ -166,7 +177,7 @@ class HBV(torch.nn.Module):
 
         Returns
         -------
-        Dict[str, torch.Tensor]
+        dict
             Dictionary of descaled routing parameters.
         """
         parameter_dict = {}
@@ -188,14 +199,14 @@ class HBV(torch.nn.Module):
         
         Parameters
         ----------
-        x_dict : Dict[str, torch.Tensor]
+        x_dict : dict
             Dictionary of input forcing data.
         parameters : torch.Tensor
             Unprocessed, learned parameters from a neural network.
         
         Returns
         -------
-        Union[Tuple, Dict[str, torch.Tensor]]
+        Union[Tuple, dict]
             Tuple or dictionary of model outputs.
         """
         # Unpack input data.
@@ -234,7 +245,7 @@ class HBV(torch.nn.Module):
                           device=self.device) + 0.001
 
         # Warm-up model states - run the model only on warm_up days first.
-        if  warm_up > 0:
+        if warm_up > 0:
             with torch.no_grad():
                 phy_param_warmup_dict = self.descale_phy_parameters(
                     phy_params[:warm_up,:,:],
@@ -272,11 +283,11 @@ class HBV(torch.nn.Module):
 
     def PBM(
             self,
-            forcing:torch.Tensor,
+            forcing: torch.Tensor,
             states: Tuple,
             full_param_dict: Dict
         ) -> Union[Tuple, Dict[str, torch.Tensor]]:
-        """Run the HBV1.1p model.
+        """Run the HBV model forward.
         
         Parameters
         ----------
@@ -284,12 +295,12 @@ class HBV(torch.nn.Module):
             Input forcing data.
         states : Tuple
             Initial model states.
-        full_param_dict : Dict
+        full_param_dict : dict
             Dictionary of model parameters.
         
         Returns
         -------
-        Union[Tuple, Dict[str, torch.Tensor]]
+        Union[Tuple, dict]
             Tuple or dictionary of model outputs.
         """
         SNOWPACK, MELTWATER, SM, SUZ, SLZ = states
@@ -315,6 +326,7 @@ class HBV(torch.nn.Module):
         Q1_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
         Q2_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
 
+        # AET = PET_coef * PET
         AET = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         recharge_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
@@ -458,7 +470,7 @@ class HBV(torch.nn.Module):
             # Baseflow index (BFI) calculation
             BFI_sim = 100 * (torch.sum(Q2_rout, dim=0) / (
                 torch.sum(Qs, dim=0) + self.nearzero))[:,0]
-
+            
             # Return all sim results.
             out_dict = {
                 'flow_sim': Qs,
