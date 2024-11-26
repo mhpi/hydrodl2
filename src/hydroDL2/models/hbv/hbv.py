@@ -73,10 +73,8 @@ class HBV(torch.nn.Module):
             self.comprout = config['phy_model'].get('comprout', self.comprout)
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
-
-            if 'parBETAET' in self.dy_params :
+            if 'parBETAET' in self.dy_params:
                 self.parameter_bounds['parBETAET'] = [0.3, 5]
-
         self.set_parameters()
 
     def set_parameters(self) -> None:
@@ -93,7 +91,7 @@ class HBV(torch.nn.Module):
     def unpack_parameters(
             self,
             parameters: torch.Tensor,
-        ) -> Dict[str, torch.Tensor]:
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
@@ -117,6 +115,7 @@ class HBV(torch.nn.Module):
                 self.nmul
             )
         # Routing parameters
+        routing_params = None
         if self.routing == True:
             routing_params = torch.sigmoid(
                 parameters[-1, :, phy_param_count * self.nmul:]
@@ -215,16 +214,18 @@ class HBV(torch.nn.Module):
 
         # Unpack parameters.
         phy_params, routing_params = self.unpack_parameters(parameters)
-        self.routing_param_dict = self.descale_rout_parameters(routing_params)
+        
+        if self.routing:
+            self.routing_param_dict = self.descale_rout_parameters(routing_params)
 
         # Initialization
-        if not self.warm_up_states:
+        if self.warm_up_states:
+            warm_up = self.warm_up
+        else:
             # No state warm up - run the full model for warm_up days.
             self.pred_cutoff = self.warm_up
             warm_up = 0
-        else:
-            warm_up = self.warm_up
-
+        
         n_grid = x.size(1)
 
         # Initialize model states.
@@ -260,7 +261,7 @@ class HBV(torch.nn.Module):
                 self.routing = False
 
                 SNOWPACK, MELTWATER, SM, SUZ, SLZ = self.PBM(
-                    x[0:warm_up, :, :],
+                    x[:warm_up, :, :],
                     [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
                     phy_param_warmup_dict
                 )
