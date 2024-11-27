@@ -6,6 +6,7 @@ import torch
 from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.batch_jacobian import batchJacobian
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
+from hydroDL2.core.calc.FDJacobian import finite_difference_jacobian, finite_difference_jacobian_P
 
 
 class HBVAdjoint(torch.nn.Module):
@@ -77,7 +78,7 @@ class HBVAdjoint(torch.nn.Module):
             self.comprout = config['phy_model'].get('comprout', self.comprout)
             self.nearzero = config['phy_model']['nearzero']
             self.nmul = config['nmul']
-            self.AD_efficient = config['phy_model']['AD_efficient']
+            
             if 'parBETAET' in self.dy_params :
                 self.parameter_bounds['parBETAET'] = [0.3, 5]
 
@@ -238,14 +239,13 @@ class HBVAdjoint(torch.nn.Module):
         nflux = 1 # currently only return streamflow
         delta_t  = torch.tensor(1.0).to(device = self.device)  ## Daily model
         if self.warm_up> 0:
-            
-            phy_params_warmup = self.make_phy_parameters(phy_params[:self.warm_up,:,:],self.phy_param_names,[])
-            x_warmup = x[:self.warm_up,:,:].unsqueeze(1).repeat([1, self.nmul, 1, 1])
-            x_warmup = x_warmup.view(x_warmup.shape[0], bsnew, x_warmup.shape[-1])            
-            f_warm_up = HBV(x_warmup, self.parameter_bounds)
-            M_warm_up = MOL(f_warm_up, nS, nflux, self.warm_up, bsDefault=bsnew, mtd=0, dtDefault=delta_t,AD_efficient=self.AD_efficient)
-            y0 = M_warm_up.nsteps_pDyn(phy_params_warmup, y_init)[-1, :, :]
-            
+            with torch.no_grad():
+                phy_params_warmup = self.make_phy_parameters(phy_params[:self.warm_up,:,:],self.phy_params_name,[])
+                x_warmup = x[:self.warm_up,:,:].unsqueeze(1).repeat([1, self.nmul, 1, 1])
+                x_warmup = x_warmup.view(x_warmup.shape[0], bsnew, x_warmup.shape[-1])            
+                f_warm_up = HBV_function(x_warmup, self.parameter_bounds)
+                M_warm_up = MOL(f_warm_up, nS, nflux, self.warm_up, bsDefault=bsnew, mtd=0, dtDefault=delta_t,)
+                y0 = M_warm_up.nsteps_pDyn(phy_params_warmup, y_init)[-1, :, :]
         else:
             y0 = y_init
         
@@ -262,12 +262,12 @@ class HBVAdjoint(torch.nn.Module):
 
         f = HBV(xTrain, self.parameter_bounds)
         
-        M = MOL(f, nS, nflux, nt, bsDefault=bsnew, dtDefault=delta_t, mtd=0,AD_efficient=self.AD_efficient)
+        M = MOL(f, nS, nflux, nt, bsDefault=bsnew, dtDefault=delta_t, mtd=0)
         ### Newton iterations with adjoint
         ySolution = M.nsteps_pDyn(phy_params_run, y0)
 
         for day in range(0, nt):
-            _, flux = f(ySolution[day, :, :], phy_params_run[day, :, :], day)
+            _, flux = f(ySolution[day, :, :], phy_params_run[day, :, :], day, expanded_num = [1])
             simulation[day, :, :] = flux * delta_t
 
 
@@ -294,7 +294,7 @@ class HBV(torch.nn.Module):
         self.climate_data = climate_data
         self.parameter_bounds = parameter_bounds
 
-    def forward(self, y,theta,t,returnFlux=False,aux=None):
+    def forward(self, y,theta,t,expanded_num,returnFlux=False,aux=None):
         ##parameters
 
         Beta = self.parameter_bounds['parBETA'][0] + theta[:,0]*(self.parameter_bounds['parBETA'][1]-self.parameter_bounds['parBETA'][0])
@@ -321,7 +321,14 @@ class HBV(torch.nn.Module):
         dS = torch.zeros(y.shape[0],y.shape[1]).to(y)
         fluxes = torch.zeros((y.shape[0],1)).to(y)
 
-        climate_in = self.climate_data[int(t),:,:];   ##% climate at this step
+        climate_in0 = self.climate_data[int(t),:,:];   ##% climate at this step
+
+        for idx, expanded_num_i in enumerate(expanded_num):
+            if idx == 0:
+                climate_in =climate_in0.repeat_interleave(expanded_num_i, dim=0)
+            else:
+                climate_in = torch.cat([climate_in, climate_in0.repeat_interleave(expanded_num_i, dim=0)],dim = 0)
+
         P  = climate_in[:,0]
         Ep = climate_in[:,2]
         T  = climate_in[:,1]
@@ -404,157 +411,80 @@ matrixSolve = torch.linalg.solve
 
 
 class NewtonSolve(torch.autograd.Function):
-
-  @staticmethod
-  def forward(ctx, p, p2, t,G, x0=None, auxG=None, batchP=True,eval = False,AD_efficient = True):
-    useAD_jac=True
-    if x0 is None and p2 is not None:
-      x0 = p2
-
-    x = x0.clone().detach(); i=0
-    max_iter=3; gtol=1e-3
-
-    if useAD_jac:
-        torch.set_grad_enabled(True)
-
-    x.requires_grad = True
-
-    if p2 is None:
-        gg = G(x, p, t, auxG)
-    else:
-        gg = G(x, p, p2, t, auxG)
-    if AD_efficient:
-        dGdx = batchJacobian(gg,x,graphed=True)
-    else:
-        dGdx = batchJacobian_AD_slow(gg, x, graphed=True)
-    if torch.isnan(dGdx).any() or torch.isinf(dGdx).any():
-        raise RuntimeError(f"Jacobian matrix is NaN")
-    x = x.detach()
-
-    torch.set_grad_enabled(False)
-    resnorm = torch.linalg.norm(gg, float('inf'),dim= [1]) # calculate norm of the residuals
-    resnorm0 = 100*resnorm;
-
-
-    while ((torch.max(resnorm)>gtol ) and  i<=max_iter):
-        i+=1
-        if torch.max(resnorm/resnorm0) > 0.2:
-              if useAD_jac:
-                torch.set_grad_enabled(True)
-
-              x.requires_grad = True
-
-              if p2 is None:
-                gg = G(x, p, t, auxG)
-              else:
-                gg = G(x, p, p2, t, auxG)
-              if AD_efficient:
-                dGdx = batchJacobian(gg,x,graphed=True)
-              else:
-                dGdx = batchJacobian_AD_slow(gg, x, graphed=True)
-              if torch.isnan(dGdx).any() or torch.isinf(dGdx).any():
-                raise RuntimeError(f"Jacobian matrix is NaN")
-
-              x = x.detach()
-
-              torch.set_grad_enabled(False)
-
-        if dGdx.ndim==gg.ndim: # same dimension, must be scalar.
-          dx =  (gg/dGdx).detach()
-        else:
-          dx =  matrixSolve(dGdx, gg).detach()
-        x = x - dx
-        if useAD_jac:
-            torch.set_grad_enabled(True)
-        x.requires_grad = True
-        if p2 is None:
-            gg = G(x, p, t, auxG)
-        else:
-            gg = G(x, p, p2, t, auxG)
-        torch.set_grad_enabled(False)
-        resnorm0 = resnorm; ##% old resnorm
-        resnorm = torch.linalg.norm(gg, float('inf'),dim= [1]);
-
-    torch.set_grad_enabled(True)
-    x = x.detach()
-    if not eval:
+    @staticmethod
+    def forward(ctx, p, p2, t, G, x0=None, auxG=None, batchP=True):
+    
+         # batchP =True if parameters have a batch dimension
+         # with torch.no_grad():
+        if x0 is None and p2 is not None:
+            x0 = p2
+    
+        x = x0.double().clone().detach();
+        i = 0;
+        max_iter = 3;
+        gtol = 1e-3;
+    
+        epsilon = 6.0555e-06
+        dGdx, gg = finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG, perturbed_p=0)
+    
+        if torch.isnan(dGdx).any() or torch.isinf(dGdx).any():
+            raise RuntimeError(f"Jacobian matrix is NaN")
+    
+        resnorm = torch.linalg.norm(gg, float('inf'), dim=[1])  # calculate norm of the residuals
+        resnorm0 = 100 * resnorm;
+        while ((torch.max(resnorm) > gtol) and i <= max_iter):
+    
+            i += 1
+            if torch.max(resnorm / resnorm0) > 0.2:
+    
+                dGdx, gg = finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG, perturbed_p=0)
+                if torch.isnan(dGdx).any() or torch.isinf(dGdx).any():
+                    raise RuntimeError(f"Jacobian matrix is NaN")
+    
+            if dGdx.ndim == gg.ndim:  # same dimension, must be scalar.
+                dx = (gg / dGdx)
+            else:
+                dx = matrixSolve(dGdx, gg)
+            x = x - dx
+            gg = G(x, p, p2, t, [1], auxG)
+            resnorm0 = resnorm;  ##% old resnorm
+            resnorm = torch.linalg.norm(gg, float('inf'), dim=[1]);
+    
         if batchP:
-          # dGdp is needed only upon convergence.
-          if p2 is None:
-            if AD_efficient:
-                dGdp = batchJacobian(gg, p, graphed=True); dGdp2 = None
-            else:
-                dGdp = batchJacobian_AD_slow(gg, p, graphed=True);
-                dGdp2 = None
-          else:
-            if AD_efficient:
-                dGdp, dGdp2 = batchJacobian(gg, (p,p2),graphed=True)
-            else:
-                dGdp = batchJacobian_AD_slow(gg, p,graphed=True)# this one is needed only upon convergence.
-                dGdp2 = batchJacobian_AD_slow(gg, p2, graphed=True)
-            if torch.isnan(dGdp).any() or torch.isinf(dGdp).any() or torch.isnan(dGdp2).any() or torch.isinf(dGdp2).any():
-                raise RuntimeError(f"Jacobian matrix is NaN")
-
+            dGdp,dGdp2 =  finite_difference_jacobian_P( G, x, p, p2, t, epsilon, auxG)
+        
         else:
-          assert("nonbatchp (like NN) pathway not debugged through yet")
+            assert ("nonbatchp (like NN) pathway not debugged through yet")
+         # print("day ", t, "Iterations ", i)
+        ctx.save_for_backward(dGdp.float(), dGdp2.float(), dGdx.float())
+         # This way, we reduced one forward run. You can also save these two to the CPU if forward run is
+         # Alternatively, if memory is a problem, save x and run g during the backward.
+        del gg
+        return x.float()
 
-        ctx.save_for_backward(dGdp,dGdp2,dGdx)
-
-    torch.set_grad_enabled(False)
-    del gg
-    return x
-
-  @staticmethod
-  def backward(ctx, dLdx):
-
-    with torch.no_grad():
-      dGdp,dGdp2,dGdx = ctx.saved_tensors
-      dGdxT = torch.permute(dGdx, (0, 2, 1))
-      lambTneg = matrixSolve(dGdxT, dLdx);
-      if lambTneg.ndim<=2:
-        lambTneg = torch.unsqueeze(lambTneg,2)
-      dLdp = -torch.bmm(torch.permute(lambTneg,(0, 2, 1)),dGdp)
-      dLdp = torch.squeeze(dLdp,1)
-      if dGdp2 is None:
-        dLdp2 = None
-      else:
-        dLdp2 = -torch.bmm(torch.permute(lambTneg,(0, 2, 1)),dGdp2)
-        dLdp2 = torch.squeeze(dLdp2,1)
-      return dLdp, dLdp2, None,None, None, None, None,None,None
-
-
-def batchJacobian_AD_slow(y, x, graphed=False, batchx=True):
-    if y.ndim == 1:
-        y = y.unsqueeze(1)
-    ny = y.shape[-1]
-    b = y.shape[0]
-
-    def get_vjp(v, yi):
-        grads = torch.autograd.grad(outputs=yi, inputs=x, grad_outputs=v,retain_graph=True,create_graph=graphed)
-        return grads
-
-    nx = x.shape[-1]
-
-    jacobian = torch.zeros(b,ny, nx).to(y)
-    for i in range(ny):
-        v = torch.ones(b).to(y)
-
-        grad = get_vjp(v, y[:,i])[0]
-        jacobian[:,i, :] = grad
-    if not batchx:
-        jacobian.squeeze(0)
-
-
-    if not graphed:
-        jacobian = jacobian.detach()
-
-    return jacobian
+    @staticmethod
+    def backward(ctx, dLdx):
+        # pydevd.settrace(suspend=False, trace_only_current_thread=True)
+        with torch.no_grad():
+            dGdp, dGdp2, dGdx = ctx.saved_tensors
+            dGdxT = torch.permute(dGdx, (0, 2, 1))
+            lambTneg = matrixSolve(dGdxT, dLdx);
+            if lambTneg.ndim <= 2:
+                lambTneg = torch.unsqueeze(lambTneg, 2)
+            dLdp = -torch.bmm(torch.permute(lambTneg, (0, 2, 1)), dGdp)
+            dLdp = torch.squeeze(dLdp, 1)  # ADHOC!! DON"T KNOW WHY!!
+            if dGdp2 is None:
+                dLdp2 = None
+            else:
+                dLdp2 = -torch.bmm(torch.permute(lambTneg, (0, 2, 1)), dGdp2)
+                dLdp2 = torch.squeeze(dLdp2, 1)  # ADHOC!! DON"T KNOW WHY!!
+            return dLdp, dLdp2, None, None, None, None, None, None
 
 
 class MOL(torch.nn.Module):
   # Method of Lines time integrator as a nonlinear equation G(x, p, xt, t, auxG)=0.
   # rhs is preloaded at construct and is the equation for the right hand side of the equation.
-    def __init__(self, rhsFunc,ny,nflux,rho, bsDefault =1 , mtd = 0, dtDefault=0, solveAdj = NewtonSolve.apply,eval = False,AD_efficient=True):
+    def __init__(self, rhsFunc,ny,nflux,rho, bsDefault =1 , mtd = 0, dtDefault=0, solveAdj = NewtonSolve.apply):
         super(MOL, self).__init__()
         self.mtd = mtd # time discretization method. =0 for backward Euler
         self.rhs = rhsFunc
@@ -564,19 +494,17 @@ class MOL(torch.nn.Module):
         self.nflux = nflux
         self.rho = rho
         self.solveAdj = solveAdj
-        self.eval = eval
-        self.AD_efficient = AD_efficient
 
-    def forward(self, x, p, xt, t, auxG): # take one step
+    def forward(self, x, p, xt, t, expand_num,auxG ): # take one step
         # xt is x^{t}. trying to solve for x^{t+1}
         dt, aux = auxG # expand auxiliary data
 
         if self.mtd == 0: # backward Euler
-          rhs,_ = self.rhs(x, p, t, aux) # should return [nb,ng]
+          rhs,_ = self.rhs(x, p, t, expand_num, returnFlux=False,aux = aux) # should return [nb,ng]
           gg = (x - xt)/dt - rhs
         elif self.mtd == 1: # Crank Nicholson
-          rhs,_  = self.rhs(x, p, t, aux) # should return [nb,ng]
-          rhst,_ = self.rhs(xt, p, t, aux) # should return [nb,ng]
+          rhs,_  = self.rhs(x, p, t,expand_num,returnFlux=False, aux = aux) # should return [nb,ng]
+          rhst,_ = self.rhs(xt, p, t,expand_num,returnFlux=False, aux = aux) # should return [nb,ng]
           gg = (x - xt)/dt - (rhs+rhst)*0.5
         return gg
 
@@ -595,7 +523,7 @@ class MOL(torch.nn.Module):
         for t in range(rho):
             p = pDyn[t,:,:]
 
-            x = self.solveAdj(p, xt,t, self.forward, None, auxG,True, self.eval,self.AD_efficient)
+            x = self.solveAdj(p, xt,t, self.forward, None, auxG,True)
 
             ySolution[t,:,:]  = x
             xt = x
