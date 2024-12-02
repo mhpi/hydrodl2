@@ -28,11 +28,11 @@ class PRMS(torch.nn.Module):
         self.initialize = False
         self.warm_up = 0
         self.pred_cutoff = 0
-        self.warm_up_states = False
-        self.dy_params = []
+        self.warm_up_states = True
+        self.dynamic_params = []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
-        self.routing = False
+        self.routing = True
         self.comprout = False
         self.nearzero = 1e-5
         self.nmul = 1
@@ -67,15 +67,15 @@ class PRMS(torch.nn.Module):
 
         if config is not None:
             # Overwrite defaults with config values.
-            self.warm_up = config['phy_model']['warm_up']
-            self.warm_up_states = config['phy_model']['warm_up_states']
-            self.dy_drop = config['dy_drop']
-            self.dy_params = config['phy_model']['dy_params']['PRMS']
-            self.variables = config['phy_model']['forcings']
-            self.routing = config['phy_model']['routing']
-            self.comprout = config['phy_model'].get('comprout', self.comprout)
-            self.nearzero = config['phy_model']['nearzero']
-            self.nmul = config['nmul']
+            self.warm_up = config.get('warm_up', self.warm_up)
+            self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
+            self.dy_drop = config.get('dy_drop', self.dy_drop)
+            self.dynamic_params = config['dynamic_params'].get('PRMS', self.dynamic_params)
+            self.variables = config.get('variables', self.variables)
+            self.routing = config.get('routing', self.routing)
+            self.comprout = config.get('comprout', self.comprout)
+            self.nearzero = config.get('nearzero', self.nearzero)
+            self.nmul = config.get('nmul', self.nmul)
         self.set_parameters()
 
     def set_parameters(self) -> None:
@@ -288,7 +288,7 @@ class PRMS(torch.nn.Module):
         
         phy_params_dict = self.descale_phy_parameters(
             phy_params[warm_up:,:,:],
-            dy_list=self.dy_params
+            dy_list=self.dynamic_params
         )
         
         # Run the model for the remainder of simulation period.

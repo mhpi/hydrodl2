@@ -40,7 +40,7 @@ t_range: # None for sequence mode, but needed for step by step as an upper limit
 ## Model Config -------------------------------#
 pnn_model: LSTM    # LSTM, MLP
 hydro_models: [HBV]    # HBV,PRMS, SACSMA_with_snow
-dy_params:
+dynamic_params:
     HBV: [parBETA, parBETAET, parK0]    # parBETA, parBETAET
     HBV_capillary: [parBETA, parBETAET, parK0]
     SACSMA: []

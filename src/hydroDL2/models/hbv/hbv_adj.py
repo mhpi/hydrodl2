@@ -37,13 +37,14 @@ class HBVAdjoint(torch.nn.Module):
         self.config = config
         self.initialize = False
         self.warm_up = 0
-        self.dy_params = []
+        self.dynamic_params = []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
-        self.routing = False
+        self.routing = True
         self.comprout = False
         self.nearzero = 1e-5
         self.nmul = 1
+        self.ad_efficient = True
         self.device = device
         self.parameter_bounds = {
             'parBETA': [1.0, 6.0],
@@ -69,16 +70,16 @@ class HBVAdjoint(torch.nn.Module):
 
         if config is not None:
             # Overwrite defaults with config values.
-            self.warm_up = config['phy_model']['warm_up']
-            self.dy_drop = config['dy_drop']
-            self.dy_params = config['phy_model']['dy_params']['HBV_adj']
-            self.variables = config['phy_model']['forcings']
-            self.routing = config['phy_model']['routing']
-            self.comprout = config['phy_model'].get('comprout', self.comprout)
-            self.nearzero = config['phy_model']['nearzero']
-            self.nmul = config['nmul']
-            self.AD_efficient = config['phy_model']['AD_efficient']
-            if 'parBETAET' in self.dy_params :
+            self.warm_up = config.get('warm_up', self.warm_up)
+            self.dy_drop = config.get('dy_drop', self.dy_drop)
+            self.dynamic_params = config['dynamic_params'].get('HBV_adj', self.dynamic_params)
+            self.variables = config.get('variables', self.variables)
+            self.routing = config.get('routing', self.routing)
+            self.comprout = config.get('comprout', self.comprout)
+            self.nearzero = config.get('nearzero', self.nearzero)
+            self.nmul = config.get('nmul', self.nmul)
+            self.ad_efficient = config.get('ad_efficient', self.ad_efficient)
+            if 'parBETAET' in self.dynamic_params :
                 self.parameter_bounds['parBETAET'] = [0.3, 5]
 
         self.set_parameters()
@@ -243,13 +244,13 @@ class HBVAdjoint(torch.nn.Module):
             x_warmup = x[:self.warm_up,:,:].unsqueeze(1).repeat([1, self.nmul, 1, 1])
             x_warmup = x_warmup.view(x_warmup.shape[0], bsnew, x_warmup.shape[-1])            
             f_warm_up = HBV(x_warmup, self.parameter_bounds)
-            M_warm_up = MOL(f_warm_up, nS, nflux, self.warm_up, bsDefault=bsnew, mtd=0, dtDefault=delta_t,AD_efficient=self.AD_efficient)
+            M_warm_up = MOL(f_warm_up, nS, nflux, self.warm_up, bsDefault=bsnew, mtd=0, dtDefault=delta_t,ad_efficient=self.ad_efficient)
             y0 = M_warm_up.nsteps_pDyn(phy_params_warmup, y_init)[-1, :, :]
             
         else:
             y0 = y_init
         
-        phy_params_run = self.make_phy_parameters(phy_params[self.warm_up:,:,:],self.phy_param_names,self.dy_params)
+        phy_params_run = self.make_phy_parameters(phy_params[self.warm_up:,:,:],self.phy_param_names,self.dynamic_params)
         routy_params_dict = self.descale_rout_parameters(routing_params,self.rout_params_name)
         
         xTrain = x[self.warm_up:,:,:].unsqueeze(1).repeat([1, self.nmul, 1, 1])
@@ -262,7 +263,7 @@ class HBVAdjoint(torch.nn.Module):
 
         f = HBV(xTrain, self.parameter_bounds)
         
-        M = MOL(f, nS, nflux, nt, bsDefault=bsnew, dtDefault=delta_t, mtd=0,AD_efficient=self.AD_efficient)
+        M = MOL(f, nS, nflux, nt, bsDefault=bsnew, dtDefault=delta_t, mtd=0,ad_efficient=self.ad_efficient)
         ### Newton iterations with adjoint
         ySolution = M.nsteps_pDyn(phy_params_run, y0)
 
@@ -406,7 +407,7 @@ matrixSolve = torch.linalg.solve
 class NewtonSolve(torch.autograd.Function):
 
   @staticmethod
-  def forward(ctx, p, p2, t,G, x0=None, auxG=None, batchP=True,eval = False,AD_efficient = True):
+  def forward(ctx, p, p2, t,G, x0=None, auxG=None, batchP=True,eval = False,ad_efficient = True):
     useAD_jac=True
     if x0 is None and p2 is not None:
       x0 = p2
@@ -423,7 +424,7 @@ class NewtonSolve(torch.autograd.Function):
         gg = G(x, p, t, auxG)
     else:
         gg = G(x, p, p2, t, auxG)
-    if AD_efficient:
+    if ad_efficient:
         dGdx = batchJacobian(gg,x,graphed=True)
     else:
         dGdx = batchJacobian_AD_slow(gg, x, graphed=True)
@@ -448,7 +449,7 @@ class NewtonSolve(torch.autograd.Function):
                 gg = G(x, p, t, auxG)
               else:
                 gg = G(x, p, p2, t, auxG)
-              if AD_efficient:
+              if ad_efficient:
                 dGdx = batchJacobian(gg,x,graphed=True)
               else:
                 dGdx = batchJacobian_AD_slow(gg, x, graphed=True)
@@ -481,13 +482,13 @@ class NewtonSolve(torch.autograd.Function):
         if batchP:
           # dGdp is needed only upon convergence.
           if p2 is None:
-            if AD_efficient:
+            if ad_efficient:
                 dGdp = batchJacobian(gg, p, graphed=True); dGdp2 = None
             else:
                 dGdp = batchJacobian_AD_slow(gg, p, graphed=True);
                 dGdp2 = None
           else:
-            if AD_efficient:
+            if ad_efficient:
                 dGdp, dGdp2 = batchJacobian(gg, (p,p2),graphed=True)
             else:
                 dGdp = batchJacobian_AD_slow(gg, p,graphed=True)# this one is needed only upon convergence.
@@ -554,7 +555,7 @@ def batchJacobian_AD_slow(y, x, graphed=False, batchx=True):
 class MOL(torch.nn.Module):
   # Method of Lines time integrator as a nonlinear equation G(x, p, xt, t, auxG)=0.
   # rhs is preloaded at construct and is the equation for the right hand side of the equation.
-    def __init__(self, rhsFunc,ny,nflux,rho, bsDefault =1 , mtd = 0, dtDefault=0, solveAdj = NewtonSolve.apply,eval = False,AD_efficient=True):
+    def __init__(self, rhsFunc,ny,nflux,rho, bsDefault =1 , mtd = 0, dtDefault=0, solveAdj = NewtonSolve.apply,eval = False,ad_efficient=True):
         super(MOL, self).__init__()
         self.mtd = mtd # time discretization method. =0 for backward Euler
         self.rhs = rhsFunc
@@ -565,7 +566,7 @@ class MOL(torch.nn.Module):
         self.rho = rho
         self.solveAdj = solveAdj
         self.eval = eval
-        self.AD_efficient = AD_efficient
+        self.ad_efficient = ad_efficient
 
     def forward(self, x, p, xt, t, auxG): # take one step
         # xt is x^{t}. trying to solve for x^{t+1}
@@ -595,7 +596,7 @@ class MOL(torch.nn.Module):
         for t in range(rho):
             p = pDyn[t,:,:]
 
-            x = self.solveAdj(p, xt,t, self.forward, None, auxG,True, self.eval,self.AD_efficient)
+            x = self.solveAdj(p, xt,t, self.forward, None, auxG,True, self.eval,self.ad_efficient)
 
             ySolution[t,:,:]  = x
             xt = x
