@@ -67,7 +67,7 @@ class HBV(torch.nn.Module):
             self.warm_up = config.get('warm_up', self.warm_up)
             self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
-            self.dynamic_paramsarams = config['dynamic_params'].get('HBV', self.dynamic_params)
+            self.dynamic_params = config['dynamic_params'].get('HBV', self.dynamic_params)
             self.variables = config.get('variables', self.variables)
             self.routing = config.get('routing', self.routing)
             self.comprout = config.get('comprout', self.comprout)
