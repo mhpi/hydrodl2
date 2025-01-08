@@ -167,5 +167,8 @@ src/hydroDL2/_version.py
 
 # Other
 *sacsma*
-validation/
+*prms*
 archive/
+runs/
+results/
+validation/
