@@ -16,7 +16,7 @@ class HBVCapillary(torch.nn.Module):
     Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
     which runs the HBV-light hydrological model (Seibert, 2005).
 
-    Parameters
+    Parxsxameters
     ----------
     config : dict, optional
         Configuration dictionary.

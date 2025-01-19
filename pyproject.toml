@@ -14,7 +14,7 @@ authors = [
 maintainers = [
     {name = "Leo Lonzarich", email = "lglonzaric@gmail.com"},
     {name = "Tadd Bindas", email = "taddbindas@gmail.com"},
-    {name = "Yalan Song", email = "songyalan1@gmail.com},
+    {name = "Yalan Song", email = "songyalan1@gmail.com"},
 ]
 dependencies = [
     "torch",
