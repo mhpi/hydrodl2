@@ -52,11 +52,11 @@ class HBV(torch.nn.Module):
             'parTT': [-2.5, 2.5],
             'parCFMAX': [0.5, 10],
             'parCFR': [0, 0.1],
-            'parCWH': [0, 0.2]
+            'parCWH': [0, 0.2],
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
-            'rout_b': [0, 6.5]
+            'rout_b': [0, 6.5],
         }
 
         if not device:
@@ -490,7 +490,7 @@ class HBV(torch.nn.Module):
                 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
                 'tosoil': tosoil_sim.mean(-1, keepdim=True),
                 'percolation': PERC_sim.mean(-1, keepdim=True),
-                'BFI_sim': BFI_sim
+                'BFI_sim': BFI_sim,
             }
             
             if not self.warm_up_states:

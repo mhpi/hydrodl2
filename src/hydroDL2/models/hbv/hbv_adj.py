@@ -14,6 +14,8 @@ class HBVAdjoint(torch.nn.Module):
     Multi-component Pytorch HBV model using implicit numerical scheme and
     gradient tracking is supported by adjoint.
     
+    Written by Yalan Song.
+
     See Publication:
         Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K. E.,
         & Shen, C. (2024). 
@@ -59,11 +61,11 @@ class HBVAdjoint(torch.nn.Module):
             'parTT': [-2.5, 2.5],
             'parCFMAX': [0.5, 10],
             'parCFR': [0, 0.1],
-            'parCWH': [0, 0.2]
+            'parCWH': [0, 0.2],
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
-            'rout_b': [0, 6.5]
+            'rout_b': [0, 6.5],
         }
 
         if not device:

@@ -56,11 +56,11 @@ class HBVCapillary(torch.nn.Module):
             'parCFR': [0, 0.1],
             'parCWH': [0, 0.2],
             'parBETAET': [0.3, 5],
-            'parC': [0, 1]
+            'parC': [0, 1],
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
-            'rout_b': [0, 6.5]
+            'rout_b': [0, 6.5],
         }
 
         if not device:
@@ -114,7 +114,7 @@ class HBVCapillary(torch.nn.Module):
                 parameters.shape[0],
                 parameters.shape[1],
                 phy_param_count,
-                self.nmul
+                self.nmul,
             )
         # Routing parameters
         routing_params = None
@@ -498,7 +498,7 @@ class HBVCapillary(torch.nn.Module):
                 'tosoil': tosoil_sim.mean(-1, keepdim=True),
                 'percolation': PERC_sim.mean(-1, keepdim=True),
                 'capillary': capillary_sim.mean(-1, keepdim=True),
-                'BFI_sim': BFI_sim
+                'BFI_sim': BFI_sim,
             }
             
             if not self.warm_up_states:
