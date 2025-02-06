@@ -90,10 +90,10 @@ class HBVunitBasin(torch.nn.Module):
         else:
             self.routing_param_names = []
 
-        self.lpc1 = len(self.dynamic_params) * self.nmul 
-        self.lpc2 = (len(self.phy_param_names) - len(self.dynamic_params)) * self.nmul \
+        self.learnable_param_count1 = len(self.dynamic_params) * self.nmul 
+        self.learnable_param_count2 = (len(self.phy_param_names) - len(self.dynamic_params)) * self.nmul \
             + len(self.routing_param_names)
-        self.learnable_param_count = self.lpc1 + self.lpc2
+        self.learnable_param_count = self.learnable_param_count1 + self.learnable_param_count2
 
     def unpack_parameters(
             self,
