@@ -8,13 +8,21 @@ from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 class HBVCapillary(torch.nn.Module):
     """
-    Multi-component Pytorch HBV model with capillary rise modification
-    and option to run without warmup.
+    Multi-component, differentiable Pytorch HBV model with a capillary rise
+    modification and option to run without internal state warmup.
 
-    Adapted from Farshid Rahmani, Yalan Song.
+    Authors
+    -------
+    -   Yalan Song, Farshid Rahmani, Leo Lonzarich
+    -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
+    -   (HBV-light Version 2) Seibert, 2005 (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
 
-    Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
-    which runs the HBV-light hydrological model (Seibert, 2005).
+    Publication
+    -----------
+    -   Yalan Song, Kamlesh Sawadekar, Jonathan M Frame, et al. Improving
+        Physics-informed, Differentiable Hydrologic Models for Capturing Unseen
+        Extreme Events. ESS Open Archive. August 07, 2024.
+        https://essopenarchive.org/doi/full/10.22541/essoar.172304428.82707157
 
     Parameters
     ----------
@@ -29,6 +37,7 @@ class HBVCapillary(torch.nn.Module):
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
+        self.name = 'HBV 1.1p'
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -146,6 +155,9 @@ class HBVCapillary(torch.nn.Module):
         n_steps = phy_params.size(0)
         n_grid = phy_params.size(1)
 
+        # TODO: Fix; if dynamic parameters are not entered in config as they are
+        # in HBV params list, then descaling misamtch will occur. Confirm this 
+        # does not happen.
         param_dict = {}
         pmat = torch.ones([1, n_grid, 1]) * self.dy_drop
         for i, name in enumerate(self.parameter_bounds.keys()):

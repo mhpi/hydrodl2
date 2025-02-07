@@ -6,15 +6,23 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBVunitBasin(torch.nn.Module):
+class HBVUnitBasin(torch.nn.Module):
     """
-    Multi-component Pytorch HBV model with rainfall runoff simulation on
-    unit basins.
+    Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
+    runoff simulation on unit basins.
 
-    Written by Yalan Song.
+    Authors
+    -------
+    -   Yalan Song
+    -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
+    -   (HBV-light Version 2) Seibert, 2005 (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
 
-    Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
-    which runs the HBV-light hydrological model (Seibert, 2005).
+    Publication
+    -----------
+    -   Yalan Song, Tadd Bindas, Chaopeng Shen, et al. High-resolution
+        national-scale water modeling is enhanced by multiscale differentiable
+        physics-informed machine learning. ESS Open Archive . September 26, 2024.
+        https://essopenarchive.org/doi/full/10.22541/essoar.172736277.74497104
 
     Parameters
     ----------
@@ -29,6 +37,7 @@ class HBVunitBasin(torch.nn.Module):
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
+        self.name = 'HBV 2.0UH'
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -160,6 +169,8 @@ class HBVunitBasin(torch.nn.Module):
         n_steps = phy_dy_params.size(0)
         n_grid = phy_dy_params.size(1)
 
+        # TODO: Fix; if dynamic parameters are not entered in config as they are
+        # in HBV params list, then descaling misamtch will occur.
         param_dict = {}
         pmat = torch.ones([1, n_grid, 1]) * self.dy_drop
         for i, name in enumerate(dy_list):
