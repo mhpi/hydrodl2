@@ -5,21 +5,26 @@ import torch
 
 from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.batch_jacobian import batchJacobian
+from hydroDL2.core.calc.FDJacobian import (finite_difference_jacobian,
+                                           finite_difference_jacobian_P)
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
-from hydroDL2.core.calc.FDJacobian import finite_difference_jacobian, finite_difference_jacobian_P
 
 
 class HBVAdjoint(torch.nn.Module):
     """
-    Multi-component Pytorch HBV model using implicit numerical scheme and
-    gradient tracking is supported by adjoint.
+    Multi-component PyTorch HBV model using implicit numerical scheme and
+    gradient tracking supported by adjoint method.
     
-    See Publication:
-        Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K. E.,
-        & Shen, C. (2024). 
-        When ancient numerical demons meet physics-informed machine learning:
-        Adjoint-based gradients for implicit differentiable modeling. 
-        Hydrology and Earth System Sciences Discussions, 1–35.
+    Author
+    ------
+    Yalan Song
+
+    Publication
+    -----------
+    -   Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K. E., & Shen,
+        C. (2024). When ancient numerical demons meet physics-informed machine
+        learning: Adjoint-based gradients for implicit differentiable modeling.
+        Hydrology and Earth System Sciences Discussions, 1-35.
         https://doi.org/10.5194/hess-2023-258
 
     Parameters
@@ -35,6 +40,7 @@ class HBVAdjoint(torch.nn.Module):
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
+        self.name = 'HBV Adjoint'
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -59,11 +65,11 @@ class HBVAdjoint(torch.nn.Module):
             'parTT': [-2.5, 2.5],
             'parCFMAX': [0.5, 10],
             'parCFR': [0, 0.1],
-            'parCWH': [0, 0.2]
+            'parCWH': [0, 0.2],
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
-            'rout_b': [0, 6.5]
+            'rout_b': [0, 6.5],
         }
 
         if not device:

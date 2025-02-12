@@ -7,12 +7,20 @@ from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
 class HBV(torch.nn.Module):
-    """Multi-component Pytorch HBV model.
+    """Multi-component, differentiable PyTorch HBV model.
 
-    Adapted from Farshid Rahmani, Yalan Song.
-
-    Original NumPy version from Beck et al., 2020 (http://www.gloh2o.org/hbv/),
-    which runs the HBV-light hydrological model (Seibert, 2005).
+    Authors
+    -------
+    -   Farshid Rahmani & Yalan Song, Leo Lonzarich
+    -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
+    -   (HBV-light Version 2) Seibert, 2005 (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
+    
+    Publication
+    -----------
+    -   Feng, D., Liu, J., Lawson, K., & Shen, C. (2022). Differentiable, learnable,
+        regionalized process-based models with multiphysical outputs can approach
+        state-of-the-art hydrologic prediction accuracy. Water Resources Research,
+        58, e2022WR032404. https://doi.org/10.1029/2022WR032404.
 
     Parameters
     ----------
@@ -27,6 +35,7 @@ class HBV(torch.nn.Module):
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
+        self.name = 'HBV 1.0'
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -52,11 +61,11 @@ class HBV(torch.nn.Module):
             'parTT': [-2.5, 2.5],
             'parCFMAX': [0.5, 10],
             'parCFR': [0, 0.1],
-            'parCWH': [0, 0.2]
+            'parCWH': [0, 0.2],
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
-            'rout_b': [0, 6.5]
+            'rout_b': [0, 6.5],
         }
 
         if not device:
@@ -144,6 +153,9 @@ class HBV(torch.nn.Module):
         n_steps = phy_params.size(0)
         n_grid = phy_params.size(1)
 
+        # TODO: Fix; if dynamic parameters are not entered in config as they are
+        # in HBV params list, then descaling misamtch will occur. Confirm this 
+        # does not happen.
         param_dict = {}
         pmat = torch.ones([1, n_grid, 1]) * self.dy_drop
         for i, name in enumerate(self.parameter_bounds.keys()):
@@ -490,7 +502,7 @@ class HBV(torch.nn.Module):
                 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
                 'tosoil': tosoil_sim.mean(-1, keepdim=True),
                 'percolation': PERC_sim.mean(-1, keepdim=True),
-                'BFI_sim': BFI_sim
+                'BFI_sim': BFI_sim,
             }
             
             if not self.warm_up_states:
