@@ -259,8 +259,8 @@ class HBVUnitBasin(torch.nn.Module):
         """
         # Unpack input data.
         x = x_dict['x_phy']
-        Ac = x_dict['Ac_all'].unsqueeze(-1).repeat(1, self.nmul)
-        Elevation = x_dict['Ele_all'].unsqueeze(-1).repeat(1, self.nmul)
+        Ac = x_dict['ac_all'].unsqueeze(-1).repeat(1, self.nmul)
+        Elevation = x_dict['elev_all'].unsqueeze(-1).repeat(1, self.nmul)
         self.muwts = x_dict.get('muwts', None)
 
         # Unpack parameters.
