@@ -1,6 +1,0 @@
-### Might need to config files, one for internal models and another for the BMI itself.
-### So preserve this structure for now even though we don't use it.
-time_step_seconds: 86400  # seconds/day 
-initial_time: 0
-start_time: 1995/10/01
-end_time: 86400*365*15 (15 year test period)
