@@ -5,7 +5,6 @@ at the top of the file and in api/__init__.py.
 
 import importlib.util
 import os
-from typing import Dict, List
 
 from torch.nn import Module
 
@@ -20,12 +19,12 @@ __all__ = ['available_models',
 
 
 
-def available_models() -> Dict[str, List[str]]:
+def available_models() -> dict[str, list[str]]:
     """Identify and list all available models in hydroDL2.
     
     Returns
     -------
-    List
+    list
         A list of available models.
     """
     # Path to the models directory
@@ -40,18 +39,17 @@ def available_models() -> Dict[str, List[str]]:
     return models
 
 
-def _list_available_models() -> List[str]:
+def _list_available_models() -> list[str]:
     """List all available models in hydroDL2 without the dict nesting
     of available_models().
         
     Returns
     -------
-    List
+    list
         A list of available models.
     """
     model_dir = _get_dir('models')
     models = []
-
     dirs, _ = get_model_dirs(model_dir)
     for dir in dirs:
         _, file_names = get_model_files(dir)
@@ -61,12 +59,12 @@ def _list_available_models() -> List[str]:
     return models
 
 
-def available_modules() -> Dict[str, List[str]]:
+def available_modules() -> dict[str, list[str]]:
     """Identify and list all available modules in the hydroDL2.
     
     Returns
     -------
-    List
+    list
         A list of available modules.
     """
     # Path to the modules directory
@@ -88,9 +86,9 @@ def load_model(model: str, ver_name: str = None) -> Module:
 
     Parameters
     ----------
-    model : str
+    model
         The model name.
-    ver_name : str, optional
+    ver_name
         The version name (class) of the model to load within the model file.
     
     Returns

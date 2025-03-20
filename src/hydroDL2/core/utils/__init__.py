@@ -1,18 +1,18 @@
 import os
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 __all__ = ['get_model_dirs',
            'get_model_files',
            '_get_dir'
            ]
 
-def get_model_dirs(directory: Union[Path, str]) -> tuple[List[Path], List[str]]:
+def get_model_dirs(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
     """Get all subdirectories in a given directory.
     
     Parameters
     ----------
-    directory : Path or str
+    directory
         The parent directory.
     """
     if isinstance(directory, str):
@@ -30,12 +30,12 @@ def get_model_dirs(directory: Union[Path, str]) -> tuple[List[Path], List[str]]:
     return dirs, dir_names
 
 
-def get_model_files(directory: Union[Path, str]) -> tuple[List[Path], List[str]]:
+def get_model_files(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
     """Get all files in a given directory.
     
     Parameters
     ----------
-    directory : Path or str
+    directory
         The parent directory.
     """
     if isinstance(directory, str):

@@ -2,12 +2,7 @@ import torch
 
 
 def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
-
-
     nb, nx = x.shape
-
-
-
     if perturbed_p == 0:
         ny = nx
     elif perturbed_p == 1:
@@ -48,8 +43,6 @@ def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
     return dGdx, gg_original
 
 
-
-
 def finite_difference_jacobian_P(G, x, p, p2, t,  epsilon, auxG):
     nb, np = p.shape
     _, np2 = p2.shape
@@ -66,8 +59,6 @@ def finite_difference_jacobian_P(G, x, p, p2, t,  epsilon, auxG):
     perturbation_p = torch.cat([torch.zeros(nb, 1, np), perturbation_p], dim=1).to(x)
 
     perturbation_p2 = perturbation_p2.to(x)
-
-
 
     pE[:nb * (np + 1),:] =  pE[:nb * (np + 1),:]  + perturbation_p.reshape(nb * (np + 1), np)
     p2E[nb * (np + 1):,:] = p2E[nb * (np + 1):,:] + perturbation_p2.reshape(nb * (np2), np2)
@@ -89,6 +80,3 @@ def finite_difference_jacobian_P(G, x, p, p2, t,  epsilon, auxG):
     dGdp = ((gg_perturbed_p - gg_original_p.unsqueeze(1)) / epsilon).permute(0, 2, 1)
     dGdp2 = ((gg_perturbed_p2 - gg_original_p.unsqueeze(1)) / epsilon).permute(0, 2, 1)
     return dGdp, dGdp2
-
-
-

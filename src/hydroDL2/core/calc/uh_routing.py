@@ -3,8 +3,6 @@ import torch.nn.functional as F
 
 
 def UH_gamma(a, b, lenF=10):
-    """ TODO: Revise"""
-
     # UH. a [time (same all time steps), batch, var]
     m = a.shape
     lenF = min(a.shape[0], lenF)
@@ -12,7 +10,7 @@ def UH_gamma(a, b, lenF=10):
     aa = F.relu(a[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.1  # minimum 0.1. First dimension of a is repeat
     theta = F.relu(b[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.5  # minimum 0.5
     t = torch.arange(0.5, lenF * 1.0).view([lenF, 1, 1]).repeat([1, m[1], m[2]])
-    t = t.cuda(aa.device)
+    t = t.to(aa.device)
     denom = (aa.lgamma().exp()) * (theta ** aa)
     mid = t ** (aa - 1)
     right = torch.exp(-t / theta)
@@ -21,9 +19,7 @@ def UH_gamma(a, b, lenF=10):
 
     return w
 
-def UH_conv(x, UH, viewmode=1):
-    # TODO: Revise
-    
+def UH_conv(x, UH, viewmode=1):    
     # UH is a vector indicating the unit hydrograph
     # the convolved dimension will be the last dimension
     # UH convolution is
@@ -55,8 +51,6 @@ def UH_conv(x, UH, viewmode=1):
 
 
 def source_flow_calculation(config, flow_out, c_NN, after_routing=True):
-    """ TODO: Revise"""
-
     varC_NN = config['var_c_nn']
     if 'DRAIN_SQKM' in varC_NN:
         area_name = 'DRAIN_SQKM'

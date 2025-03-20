@@ -6,23 +6,21 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBVUnitBasin(torch.nn.Module):
-    """
-    Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
-    runoff simulation on unit basins.
+class HBV(torch.nn.Module):
+    """Multi-component, differentiable PyTorch HBV model.
 
     Authors
     -------
-    -   Yalan Song
+    -   Farshid Rahmani & Yalan Song, Leo Lonzarich
     -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
     -   (HBV-light Version 2) Seibert, 2005 (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
-
+    
     Publication
     -----------
-    -   Yalan Song, Tadd Bindas, Chaopeng Shen, et al. High-resolution
-        national-scale water modeling is enhanced by multiscale differentiable
-        physics-informed machine learning. ESS Open Archive . September 26, 2024.
-        https://essopenarchive.org/doi/full/10.22541/essoar.172736277.74497104
+    -   Feng, D., Liu, J., Lawson, K., & Shen, C. (2022). Differentiable, learnable,
+        regionalized process-based models with multiphysical outputs can approach
+        state-of-the-art hydrologic prediction accuracy. Water Resources Research,
+        58, e2022WR032404. https://doi.org/10.1029/2022WR032404.
 
     Parameters
     ----------
@@ -37,7 +35,7 @@ class HBVUnitBasin(torch.nn.Module):
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
-        self.name = 'HBV 2.0UH'
+        self.name = 'HBV 1.0'
         self.config = config
         self.initialize = False
         self.warm_up = 0
@@ -64,11 +62,6 @@ class HBVUnitBasin(torch.nn.Module):
             'parCFMAX': [0.5, 10],
             'parCFR': [0, 0.1],
             'parCWH': [0, 0.2],
-            'parBETAET': [0.3, 5],
-            'parC': [0, 1],
-            'parRT': [0, 20],
-            'parAC': [0, 2500],
-
         }
         self.routing_parameter_bounds = {
             'rout_a': [0, 2.9],
@@ -83,12 +76,14 @@ class HBVUnitBasin(torch.nn.Module):
             self.warm_up = config.get('warm_up', self.warm_up)
             self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
-            self.dynamic_params = config['dynamic_params'].get('HBV_2_0', self.dynamic_params)
+            self.dynamic_params = config['dynamic_params'].get('HBV', self.dynamic_params)
             self.variables = config.get('variables', self.variables)
             self.routing = config.get('routing', self.routing)
             self.comprout = config.get('comprout', self.comprout)
             self.nearzero = config.get('nearzero', self.nearzero)
             self.nmul = config.get('nmul', self.nmul)
+            if 'parBETAET' in self.dynamic_params:
+                self.parameter_bounds['parBETAET'] = [0.3, 5]
         self.set_parameters()
 
     def set_parameters(self) -> None:
@@ -99,15 +94,13 @@ class HBVUnitBasin(torch.nn.Module):
         else:
             self.routing_param_names = []
 
-        self.learnable_param_count1 = len(self.dynamic_params) * self.nmul 
-        self.learnable_param_count2 = (len(self.phy_param_names) - len(self.dynamic_params)) * self.nmul \
+        self.learnable_param_count = len(self.phy_param_names) * self.nmul \
             + len(self.routing_param_names)
-        self.learnable_param_count = self.learnable_param_count1 + self.learnable_param_count2
 
     def unpack_parameters(
             self,
             parameters: torch.Tensor,
-        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        ) -> tuple[torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
@@ -117,39 +110,30 @@ class HBVUnitBasin(torch.nn.Module):
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        tuple[torch.Tensor, torch.Tensor]
             Tuple of physical and routing parameters.
         """
         phy_param_count = len(self.parameter_bounds)
-        dy_param_count = len(self.dynamic_params)
-        dif_count = phy_param_count - dy_param_count
-
         
-        # Physical dynamic parameters
-        phy_dy_params = parameters[0].view(
-                parameters[0].shape[0],
-                parameters[0].shape[1],
-                dy_param_count,
-                self.nmul,
+        # Physical parameters
+        phy_params = torch.sigmoid(
+            parameters[:, :, :phy_param_count * self.nmul]).view(
+                parameters.shape[0],
+                parameters.shape[1],
+                phy_param_count,
+                self.nmul
             )
-        
-        # Physical static parameters
-        phy_static_params =  parameters[1][:,  :dif_count * self.nmul].view(
-            parameters[1].shape[0],
-            dif_count,
-            self.nmul,
-        )
-            
         # Routing parameters
         routing_params = None
         if self.routing == True:
-            routing_params = parameters[1][:,  dif_count * self.nmul:]
-            
-        return phy_dy_params, phy_static_params, routing_params
+            routing_params = torch.sigmoid(
+                parameters[-1, :, phy_param_count * self.nmul:]
+            )
+        return phy_params, routing_params
 
-    def descale_phy_dy_parameters(
+    def descale_phy_parameters(
             self,
-            phy_dy_params: torch.Tensor,
+            phy_params: torch.Tensor,
             dy_list:list,
         ) -> torch.Tensor:
         """Descale physical parameters.
@@ -166,51 +150,30 @@ class HBVUnitBasin(torch.nn.Module):
         dict
             Dictionary of descaled physical parameters.
         """
-        n_steps = phy_dy_params.size(0)
-        n_grid = phy_dy_params.size(1)
+        n_steps = phy_params.size(0)
+        n_grid = phy_params.size(1)
 
         # TODO: Fix; if dynamic parameters are not entered in config as they are
-        # in HBV params list, then descaling misamtch will occur.
+        # in HBV params list, then descaling misamtch will occur. Confirm this 
+        # does not happen.
         param_dict = {}
         pmat = torch.ones([1, n_grid, 1]) * self.dy_drop
-        for i, name in enumerate(dy_list):
-            staPar = phy_dy_params[-1, :, i,:].unsqueeze(0).repeat([n_steps, 1, 1])
-         
-            dynPar = phy_dy_params[:, :, i,:]
-            drmask = torch.bernoulli(pmat).detach_().to(self.device) #.cuda() 
-            comPar = dynPar * (1 - drmask) + staPar * drmask
-            param_dict[name] = change_param_range(
-                param=comPar,
-                bounds=self.parameter_bounds[name]
-            )
+        for i, name in enumerate(self.parameter_bounds.keys()):
+            staPar = phy_params[-1, :, i,:].unsqueeze(0).repeat([n_steps, 1, 1])
+            if name in dy_list:
+                dynPar = phy_params[:, :, i,:]
+                drmask = torch.bernoulli(pmat).detach_().cuda() 
+                comPar = dynPar * (1 - drmask) + staPar * drmask
+                param_dict[name] = change_param_range(
+                    param=comPar,
+                    bounds=self.parameter_bounds[name]
+                )
+            else:
+                param_dict[name] = change_param_range(
+                    param=staPar,
+                    bounds=self.parameter_bounds[name]
+                )
         return param_dict
-
-    def descale_phy_stat_parameters(
-            self,
-            phy_stat_params: torch.Tensor,
-            stat_list:list,
-        ) -> torch.Tensor:
-        """Descale routing parameters.
-        
-        Parameters
-        ----------
-        routing_params
-            Normalized routing parameters.
-
-        Returns
-        -------
-        dict
-            Dictionary of descaled routing parameters.
-        """
-        parameter_dict = {}
-        for i, name in enumerate(stat_list):
-            param = phy_stat_params[:, i,:]
-
-            parameter_dict[name] = change_param_range(
-                param=param,
-                bounds=self.parameter_bounds[name]
-            )
-        return parameter_dict
 
     def descale_rout_parameters(
             self,
@@ -243,7 +206,7 @@ class HBVUnitBasin(torch.nn.Module):
             x_dict: dict[str, torch.Tensor],
             parameters: torch.Tensor
         ) -> Union[tuple, dict[str, torch.Tensor]]:
-        """Forward pass for HBV1.1p.
+        """Forward pass for HBV.
         
         Parameters
         ----------
@@ -259,16 +222,21 @@ class HBVUnitBasin(torch.nn.Module):
         """
         # Unpack input data.
         x = x_dict['x_phy']
-        Ac = x_dict['ac_all'].unsqueeze(-1).repeat(1, self.nmul)
-        Elevation = x_dict['elev_all'].unsqueeze(-1).repeat(1, self.nmul)
         self.muwts = x_dict.get('muwts', None)
 
         # Unpack parameters.
-        phy_dy_params, phy_static_params, routing_params = self.unpack_parameters(parameters)
+        phy_params, routing_params = self.unpack_parameters(parameters)
         
         if self.routing:
             self.routing_param_dict = self.descale_rout_parameters(routing_params)
 
+        # Initialization
+        if self.warm_up_states:
+            warm_up = self.warm_up
+        else:
+            # No state warm up - run the full model for warm_up days.
+            self.pred_cutoff = self.warm_up
+            warm_up = 0
         
         n_grid = x.size(1)
 
@@ -289,36 +257,50 @@ class HBVUnitBasin(torch.nn.Module):
                           dtype=torch.float32,
                           device=self.device) + 0.001
 
-        phy_dy_params_dict = self.descale_phy_dy_parameters(
-            phy_dy_params,
+        # Warm-up model states - run the model only on warm_up days first.
+        if warm_up > 0:
+            with torch.no_grad():
+                phy_param_warmup_dict = self.descale_phy_parameters(
+                    phy_params[:warm_up,:,:],
+                    dy_list=[]
+                )
+                # Save current model settings.
+                initialize = self.initialize
+                routing  = self.routing
+
+                # Set model settings for warm-up.
+                self.initialize =  True
+                self.routing = False
+
+                SNOWPACK, MELTWATER, SM, SUZ, SLZ = self.PBM(
+                    x[:warm_up, :, :],
+                    [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
+                    phy_param_warmup_dict
+                )
+
+                # Restore model settings.
+                self.initialize = initialize
+                self.routing = routing
+        
+        phy_params_dict = self.descale_phy_parameters(
+            phy_params[warm_up:,:,:],
             dy_list=self.dynamic_params
         )
-
-        phy_static_params_dict = self.descale_phy_stat_parameters(
-            phy_static_params,
-            stat_list=[param for param in self.phy_param_names if param not in self.dynamic_params]
-        )
-
+        
         # Run the model for the remainder of simulation period.
-        return self.PBM( 
-                    x,
-                    Ac,
-                    Elevation,
+        return self.PBM(
+                    x[warm_up:, :, :],
                     [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
-                    phy_dy_params_dict,
-                    phy_static_params_dict
+                    phy_params_dict
                 )
 
     def PBM(
             self,
             forcing: torch.Tensor,
-            Ac:torch.Tensor,
-            Elevation:torch.Tensor,
             states: tuple,
-            phy_dy_params_dict: dict,
-            phy_static_params_dict: dict
+            full_param_dict: dict
         ) -> Union[tuple, dict[str, torch.Tensor]]:
-        """Run the HBV1.1p model forward.
+        """Run the HBV model forward.
         
         Parameters
         ----------
@@ -357,6 +339,7 @@ class HBVUnitBasin(torch.nn.Module):
         Q1_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
         Q2_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
 
+        # AET = PET_coef * PET
         AET = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         recharge_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
@@ -364,24 +347,29 @@ class HBVUnitBasin(torch.nn.Module):
         tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        capillary_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         
+        ## NOTE: Added for neurops dev.
+        snowpack_arr = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        meltwater_arr = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        sm_arr = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        suz_arr = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        slz_arr = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        ##
+
         param_dict ={}
         for t in range(n_steps):
             # Get dynamic parameter values per timestep.
-            for key in phy_dy_params_dict.keys():
-                param_dict[key] = phy_dy_params_dict[key][t, :, :]
-            for key in phy_static_params_dict.keys():
-                param_dict[key] = phy_static_params_dict[key][:, :]
+            for key in full_param_dict.keys():
+                param_dict[key] = full_param_dict[key][t, :, :]
+
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
-            parTT_new = (Elevation >= 2000).type(torch.float32)*4.0 + (Elevation < 2000).type(torch.float32)*param_dict['parTT']
-            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT_new).type(torch.float32))
-            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT_new).type(torch.float32))
+            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= param_dict['parTT']).type(torch.float32))
+            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < param_dict['parTT']).type(torch.float32))
 
             # Snow -------------------------------
             SNOWPACK = SNOWPACK + SNOW
-            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT_new)
+            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - param_dict['parTT'])
             # melt[melt < 0.0] = 0.0
             melt = torch.clamp(melt, min=0.0)
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
@@ -389,7 +377,7 @@ class HBVUnitBasin(torch.nn.Module):
             MELTWATER = MELTWATER + melt
             SNOWPACK = SNOWPACK - melt
             refreezing = param_dict['parCFR'] * param_dict['parCFMAX'] * (
-                parTT_new - Tm[t, :, :]
+                param_dict['parTT'] - Tm[t, :, :]
                 )
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
@@ -413,18 +401,14 @@ class HBVUnitBasin(torch.nn.Module):
             excess = SM - param_dict['parFC']
             excess = torch.clamp(excess, min=0.0)
             SM = SM - excess
-            # NOTE: Different from HBV 1.0. Add static/dynamicET shape parameter parBETAET.
-            evapfactor = (SM / (param_dict['parLP'] * param_dict['parFC'])) ** param_dict['parBETAET']
+            # parBETAET only has effect when it is a dynamic parameter.
+            evapfactor = (SM / (param_dict['parLP'] * param_dict['parFC']))
+            if 'parBETAET' in param_dict:
+                evapfactor = evapfactor ** param_dict['parBETAET']
             evapfactor = torch.clamp(evapfactor, min=0.0, max=1.0)
             ETact = PETm[t, :, :] * evapfactor
             ETact = torch.min(SM, ETact)
             SM = torch.clamp(SM - ETact, min=self.nearzero)
-
-            # Capillary rise (HBV 1.1p mod) -------------------------------
-            capillary = torch.min(SLZ, param_dict['parC'] * SLZ * (1.0 - torch.clamp(SM / param_dict['parFC'], max=1.0)))
-
-            SM = torch.clamp(SM + capillary, min=self.nearzero)
-            SLZ = torch.clamp(SLZ - capillary, min=self.nearzero)
 
             # Groundwater boxes -------------------------------
             SUZ = SUZ + recharge + excess
@@ -435,11 +419,6 @@ class HBVUnitBasin(torch.nn.Module):
             Q1 = param_dict['parK1'] * SUZ
             SUZ = SUZ - Q1
             SLZ = SLZ + PERC
-
-            LF = torch.clamp((Ac-param_dict['parAC'])/1000,min = -1, max = 1) * param_dict['parRT']*(Ac<2500)+\
-            torch.exp(torch.clamp(-(Ac-2500)/50, min = -10.0,max = 0.0))* param_dict['parRT']*(Ac>=2500)
-            SLZ = torch.clamp(SLZ + LF, min=0.0)
-
             Q2 = param_dict['parK2'] * SLZ
             SLZ = SLZ - Q2
 
@@ -449,7 +428,6 @@ class HBVUnitBasin(torch.nn.Module):
             Q2_sim[t, :, :] = Q2
             AET[t, :, :] = ETact
             SWE_sim[t, :, :] = SNOWPACK
-            capillary_sim[t, :, :] = capillary
 
             recharge_sim[t, :, :] = recharge
             excs_sim[t, :, :] = excess
@@ -457,7 +435,15 @@ class HBVUnitBasin(torch.nn.Module):
             tosoil_sim[t, :, :] = tosoil
             PERC_sim[t, :, :] = PERC
 
-        # Get the overall average 
+            ## NOTE: Added for neurops dev.
+            snowpack_arr[t, :, :] = SNOWPACK
+            meltwater_arr[t, :, :] = MELTWATER
+            sm_arr[t, :, :] = SM
+            suz_arr[t, :, :] = SUZ
+            slz_arr[t, :, :] = SLZ
+            ##
+
+        # Get the overall average
         # or weighted average using learned weights.
         if self.muwts is None:
             Qsimavg = Qsimmu.mean(-1)
@@ -491,7 +477,7 @@ class HBVUnitBasin(torch.nn.Module):
             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
             Q2_rout = UH_conv(rf_Q2, UH).permute([2, 0, 1])
 
-            if self.comprout: 
+            if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
                 Qstemp = Qsrout.view(n_steps, n_grid, self.nmul)
                 if self.muwts is None:
@@ -513,9 +499,16 @@ class HBVUnitBasin(torch.nn.Module):
             # Baseflow index (BFI) calculation
             BFI_sim = 100 * (torch.sum(Q2_rout, dim=0) / (
                 torch.sum(Qs, dim=0) + self.nearzero))[:,0]
-
+            
             # Return all sim results.
-            out_dict = {
+            states = {  ## NOTE: Added for neurops dev.
+                'snowpack': snowpack_arr.mean(-1, keepdim=True),
+                'meltwater': meltwater_arr.mean(-1, keepdim=True),
+                'soil_moisture': sm_arr.mean(-1, keepdim=True),
+                'upper_zone': suz_arr.mean(-1, keepdim=True),
+                'lower_zone': slz_arr.mean(-1, keepdim=True),
+            }
+            fluxes = {
                 'flow_sim': Qs,
                 'srflow': Q0_rout,
                 'ssflow': Q1_rout,
@@ -532,12 +525,13 @@ class HBVUnitBasin(torch.nn.Module):
                 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
                 'tosoil': tosoil_sim.mean(-1, keepdim=True),
                 'percolation': PERC_sim.mean(-1, keepdim=True),
-                'capillary': capillary_sim.mean(-1, keepdim=True),
                 'BFI_sim': BFI_sim,
             }
             
             if not self.warm_up_states:
-                for key in out_dict.keys():
+                for key in fluxes.keys():
                     if key != 'BFI_sim':
-                        out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
-            return out_dict
+                        fluxes[key] = fluxes[key][self.pred_cutoff:, :, :]
+                for key in states.keys():
+                    states[key] = states[key][self.pred_cutoff:, :, :]  ## NOTE: For neurops dev.
+            return fluxes, states

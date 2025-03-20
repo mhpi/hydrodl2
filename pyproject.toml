@@ -1,11 +1,13 @@
 [build-system]
 build-backend = "hatchling.build"
 requires = ["hatchling", "hatch-vcs"]
+# requires = ["setuptools>=42", "wheel"]
+# build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydroDL2"
 description = "Hydrology models and modules manager"
-requires-python = ">=3.9"
+readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
     {name = "Leo Lonzarich"},
@@ -16,27 +18,75 @@ maintainers = [
     {name = "Tadd Bindas", email = "taddbindas@gmail.com"},
     {name = "Yalan Song", email = "songyalan1@gmail.com"},
 ]
+requires-python = ">=3.9.0"
+dynamic = ["version"]
 dependencies = [
-    "torch",
-    "numpy",
-    "pandas",
+    "hydra-core>=1.3.2",
+    "ipykernel>=6.29.5",
+    "matplotlib>=3.10.0",
+    "numpy>=1.22.4",
+    "omegaconf>=2.3.0",
+    "pandas>=1.4.3",
+    "pydantic>=1.8.2",
+    "scikit-learn>=1.0.2",
+    "scipy>=1.7.3",
+    "torch>=1.10.1",
+    "torchaudio>=0.10.1",
+    "torchvision>=0.11.2",
+    "tqdm>=4.67.1",
+    "uv>=0.6.6",
+    "zarr>=3.0.5",
 ]
-dynamic = ["version"]  # Add this line to indicate dynamic versioning
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
 
+
+[project.urls]
+Homepage = "https://mhpi.github.io/codes/"
+Repository = "https://github.com/mhpi/hydroDL2"
 
 [project.optional-dependencies]
-test = [
-    "pytest",
-    "pytest-cov",
+# cpu = [
+#     "torch==2.6.0",
+#     "torchvision==0.21.0",
+# ]
+# cu124 = [
+#     "torch==2.6.0",
+#     "torchvision==0.21.0",
+#     "cupy-cuda12x==13.4.0",
+# ]
+
+dev = [
+    "mypy>=0.940",
+    "pytest>=7.4.2",
+    "ruff>=0.9.10",
 ]
 
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/hydroDL2/_version.py"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+xfail_strict = true
+addopts = [
+    "--import-mode=importlib",  # allow using test files with same name
+]
+
 [tool.ruff]
 src = ["src"]
-line-length = 120
+line-length = 88
 lint.select = [
     "F",  # Errors detected by Pyflakes
     "E",  # Error detected by Pycodestyle
@@ -49,6 +99,12 @@ lint.select = [
     "BLE",  # flake8-blind-except
     "UP",  # pyupgrade
     "RUF100",  # Report unused noqa directives
+]
+exclude = [
+    ".git",
+    ".vscode",
+    "archive",
+    "dev",
 ]
 lint.ignore = [
     # line too long -> we accept long comment lines; black gets rid of long code lines
@@ -72,10 +128,19 @@ lint.ignore = [
     # First line should be in imperative mood; try rephrasing
     "D401",
     ## Disable one in each pair of mutually incompatible rules
-    # We don’t want a blank line before a class docstring
+    # We don't want a blank line before a class docstring
     "D203",
     # We want docstrings to start immediately after the opening triple quote
     "D213",
+    # Keep standard multi-package import format from isort
+    "I001",
+    # Allow blank lines in docstrings, between code
+    "W293",
+    # Ignore escape sequences used in strings for latex formating
+    "W605",
+    # Ignore extra line requirements at end of docstring and docstring summary
+    "D204",
+    "D205",
 ]
 
 [tool.ruff.lint.pydocstyle]

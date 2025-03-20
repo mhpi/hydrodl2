@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import sourcedefender
 import torch
@@ -29,14 +29,14 @@ class HBVAdjoint(torch.nn.Module):
 
     Parameters
     ----------
-    config : dict, optional
+    config
         Configuration dictionary.
-    device : torch.device, optional
+    device
         Device to run the model on.
     """
     def __init__(
             self,
-            config: Optional[Dict[str, Any]] = None,
+            config: Optional[dict[str, Any]] = None,
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
@@ -107,20 +107,20 @@ class HBVAdjoint(torch.nn.Module):
             parameters: torch.Tensor,
             n_steps: int,
             n_grid: int,
-        ) -> Dict[str, torch.Tensor]:
+        ) -> dict[str, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
         ----------
-        parameters : torch.Tensor
+        parameters
             Unprocessed, learned parameters from a neural network.
-        n_steps : int
+        n_steps
             Number of time steps in the input data.
-        n_grid : int
+        n_grid
             Number of grid cells in the input data.
         Returns
         -------
-        Tuple[torch.Tensor, torch.Tensor]
+        tuple[torch.Tensor, torch.Tensor]
             Tuple of physical and routing parameters.
         """
         phy_param_count = len(self.parameter_bounds)
@@ -155,11 +155,11 @@ class HBVAdjoint(torch.nn.Module):
         
         Parameters
         ----------
-        phy_params : torch.Tensor
+        phy_params
             Normalized physical parameters.
-        name_list : list
+        name_list
             List of physical parameter names.
-        dy_list : list
+        dy_list
             List of dynamic parameters.
         
         Returns
@@ -194,9 +194,9 @@ class HBVAdjoint(torch.nn.Module):
         
         Parameters
         ----------
-        rout_params : torch.Tensor
+        rout_params
             Normalized routing parameters.
-        name_list : list
+        name_list
             List of routing parameter names.
 
         Returns
@@ -217,21 +217,21 @@ class HBVAdjoint(torch.nn.Module):
 
     def forward(
             self,
-            x_dict: Dict[str, torch.Tensor],
+            x_dict: dict[str, torch.Tensor],
             parameters: torch.Tensor
-        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
+        ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV Adj.
         
         Parameters
         ----------
-        x_dict : dict
+        x_dict
             Dictionary of input forcing data.
-        parameters : torch.Tensor
+        parameters
             Unprocessed, learned parameters from a neural network.
         
         Returns
         -------
-        Union[Tuple, dict]
+        Union[tuple, dict]
             Tuple or dictionary of model outputs.
         """
         # Unpack input data.
