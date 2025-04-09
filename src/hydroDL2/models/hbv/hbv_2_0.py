@@ -177,7 +177,8 @@ class HBVUnitBasin(torch.nn.Module):
             staPar = phy_dy_params[-1, :, i,:].unsqueeze(0).repeat([n_steps, 1, 1])
          
             dynPar = phy_dy_params[:, :, i,:]
-            drmask = torch.bernoulli(pmat).detach_().cuda() 
+            drmask = torch.bernoulli(pmat).detach_().to(self.device)
+
             comPar = dynPar * (1 - drmask) + staPar * drmask
             param_dict[name] = change_param_range(
                 param=comPar,
@@ -373,6 +374,7 @@ class HBVUnitBasin(torch.nn.Module):
                 param_dict[key] = phy_dy_params_dict[key][t, :, :]
             for key in phy_static_params_dict.keys():
                 param_dict[key] = phy_static_params_dict[key][:, :]
+                
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
             parTT_new = (Elevation >= 2000).type(torch.float32)*4.0 + (Elevation < 2000).type(torch.float32)*param_dict['parTT']
