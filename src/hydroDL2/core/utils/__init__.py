@@ -57,8 +57,6 @@ def get_model_files(directory: Union[Path, str]) -> tuple[List[Path], List[str]]
 
 def _get_dir(dir_name: str) -> Path:
     """Get the path for the given directory name."""
-    # dir = Path('../../' + dir_name)
-    # if not os.path.exists(dir):
     dir = Path(os.path.dirname(os.path.abspath(__file__)))
     dir = dir.parent.parent / dir_name
     return dir
