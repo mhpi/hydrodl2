@@ -8,8 +8,7 @@ with:
 import pytest
 from torch.nn import Module
 
-from hydroDL2 import (available_models, load_model,
-                      )
+from hydroDL2 import available_models, load_model
 from hydroDL2.api.methods import _list_available_models
 
 

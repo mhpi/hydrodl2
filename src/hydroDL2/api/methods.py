@@ -2,7 +2,6 @@
 Note: If adding new public methods, please add them to __all__ 
 at the top of the file and in api/__init__.py.
 """
-
 import importlib.util
 import os
 
@@ -10,13 +9,12 @@ from torch.nn import Module
 
 from hydroDL2.core.utils import *
 
-# List of all public-facing methods.
-__all__ = ['available_models',
-           'available_modules',
-           'load_model',
-           'load_module'
-           ]
-
+__all__ = [
+    'available_models',
+    'available_modules',
+    'load_model',
+    'load_module'
+]
 
 
 def available_models() -> dict[str, list[str]]:
