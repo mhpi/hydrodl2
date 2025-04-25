@@ -3,9 +3,7 @@ import torch.nn.functional as F
 
 
 def UH_gamma(a, b, lenF=10):
-    """ TODO: Revise"""
-
-    # UH. a [time (same all time steps), batch, var]
+    """UH. a [time (same all time steps), batch, var]."""
     m = a.shape
     lenF = min(a.shape[0], lenF)
     w = torch.zeros([lenF, m[1], m[2]])
@@ -22,23 +20,24 @@ def UH_gamma(a, b, lenF=10):
     return w
 
 def UH_conv(x, UH, viewmode=1):
-    # TODO: Revise
-    
-    # UH is a vector indicating the unit hydrograph
-    # the convolved dimension will be the last dimension
-    # UH convolution is
-    # Q(t)=\integral(x(\tao)*UH(t-\tao))d\tao
-    # conv1d does \integral(w(\tao)*x(t+\tao))d\tao
-    # hence we flip the UH
-    # https://programmer.group/pytorch-learning-conv1d-conv2d-and-conv3d.html
-    # view
+    r"""
+    Unit hydrograph convolution.
 
-    # x: [batch, var, time]
-    # UH:[batch, var, uhLen]
-    # batch needs to be accommodated by channels and we make use of groups
-    # https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
-    # https://pytorch.org/docs/stable/nn.functional.html
+    UH is a vector indicating the unit hydrograph the convolved dimension will
+    be the last dimension UH convolution is.
+    Q(t)= integral(x(\tao)*UH(t-\tao))d\tao
+    conv1d does
+    integral(w(\tao)*x(t+\tao))d\tao
+    hence we flip the UH
+    https://programmer.group/pytorch-learning-conv1d-conv2d-and-conv3d.html
+    view.
 
+    x: [batch, var, time]
+    UH:[batch, var, uhLen]
+    batch needs to be accommodated by channels and we make use of groups
+    https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
+    https://pytorch.org/docs/stable/nn.functional.html
+    """
     mm = x.shape
     nb = mm[0]
     m = UH.shape[-1]
@@ -55,8 +54,7 @@ def UH_conv(x, UH, viewmode=1):
 
 
 def source_flow_calculation(config, flow_out, c_NN, after_routing=True):
-    """ TODO: Revise"""
-
+    """Source flow calculation."""
     varC_NN = config['var_c_nn']
     if 'DRAIN_SQKM' in varC_NN:
         area_name = 'DRAIN_SQKM'
@@ -68,7 +66,7 @@ def source_flow_calculation(config, flow_out, c_NN, after_routing=True):
         flow_out['flow_sim'].shape[
             0], 1, 1)
     # flow calculation. converting mm/day to m3/sec
-    if after_routing == True:
+    if after_routing:
         srflow = (1000 / 86400) * area * (flow_out['srflow']).repeat(1, 1, config['nmul'])  # Q_t - gw - ss
         ssflow = (1000 / 86400) * area * (flow_out['ssflow']).repeat(1, 1, config['nmul'])  # ras
         gwflow = (1000 / 86400) * area * (flow_out['gwflow']).repeat(1, 1, config['nmul'])

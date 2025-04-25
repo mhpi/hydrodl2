@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import torch
 
@@ -24,14 +24,14 @@ class HBV(torch.nn.Module):
 
     Parameters
     ----------
-    config : dict, optional
+    config
         Configuration dictionary.
-    device : torch.device, optional
+    device
         Device to run the model on.
     """
     def __init__(
             self,
-            config: Optional[Dict[str, Any]] = None,
+            config: Optional[dict[str, Any]] = None,
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
@@ -89,7 +89,7 @@ class HBV(torch.nn.Module):
     def set_parameters(self) -> None:
         """Get physical parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
-        if self.routing == True:
+        if self.routing:
             self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
             self.routing_param_names = []
@@ -100,17 +100,17 @@ class HBV(torch.nn.Module):
     def unpack_parameters(
             self,
             parameters: torch.Tensor,
-        ) -> Tuple[torch.Tensor, torch.Tensor]:
+        ) -> tuple[torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
         ----------
-        parameters : torch.Tensor
+        parameters
             Unprocessed, learned parameters from a neural network.
 
         Returns
         -------
-        Tuple[torch.Tensor, torch.Tensor]
+        tuple[torch.Tensor, torch.Tensor]
             Tuple of physical and routing parameters.
         """
         phy_param_count = len(self.parameter_bounds)
@@ -125,7 +125,7 @@ class HBV(torch.nn.Module):
             )
         # Routing parameters
         routing_params = None
-        if self.routing == True:
+        if self.routing:
             routing_params = torch.sigmoid(
                 parameters[-1, :, phy_param_count * self.nmul:]
             )
@@ -140,9 +140,9 @@ class HBV(torch.nn.Module):
         
         Parameters
         ----------
-        phy_params : torch.Tensor
+        phy_params
             Normalized physical parameters.
-        dy_list : list
+        dy_list
             List of dynamic parameters.
         
         Returns
@@ -154,7 +154,7 @@ class HBV(torch.nn.Module):
         n_grid = phy_params.size(1)
 
         # TODO: Fix; if dynamic parameters are not entered in config as they are
-        # in HBV params list, then descaling misamtch will occur. Confirm this 
+        # in HBV params list, then descaling misamtch will occur. Confirm this
         # does not happen.
         param_dict = {}
         pmat = torch.ones([1, n_grid, 1]) * self.dy_drop
@@ -162,7 +162,7 @@ class HBV(torch.nn.Module):
             staPar = phy_params[-1, :, i,:].unsqueeze(0).repeat([n_steps, 1, 1])
             if name in dy_list:
                 dynPar = phy_params[:, :, i,:]
-                drmask = torch.bernoulli(pmat).detach_().cuda() 
+                drmask = torch.bernoulli(pmat).detach_().cuda()
                 comPar = dynPar * (1 - drmask) + staPar * drmask
                 param_dict[name] = change_param_range(
                     param=comPar,
@@ -183,7 +183,7 @@ class HBV(torch.nn.Module):
         
         Parameters
         ----------
-        routing_params : torch.Tensor
+        routing_params
             Normalized routing parameters.
 
         Returns
@@ -203,21 +203,21 @@ class HBV(torch.nn.Module):
 
     def forward(
             self,
-            x_dict: Dict[str, torch.Tensor],
+            x_dict: dict[str, torch.Tensor],
             parameters: torch.Tensor
-        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
+        ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV.
         
         Parameters
         ----------
-        x_dict : dict
+        x_dict
             Dictionary of input forcing data.
-        parameters : torch.Tensor
+        parameters
             Unprocessed, learned parameters from a neural network.
         
         Returns
         -------
-        Union[Tuple, dict]
+        Union[tuple, dict]
             Tuple or dictionary of model outputs.
         """
         # Unpack input data.
@@ -297,23 +297,23 @@ class HBV(torch.nn.Module):
     def PBM(
             self,
             forcing: torch.Tensor,
-            states: Tuple,
-            full_param_dict: Dict
-        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
+            states: tuple,
+            full_param_dict: dict
+        ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV model forward.
         
         Parameters
         ----------
-        forcing : torch.Tensor
+        forcing
             Input forcing data.
-        states : Tuple
+        states
             Initial model states.
-        full_param_dict : dict
+        full_param_dict
             Dictionary of model parameters.
         
         Returns
         -------
-        Union[Tuple, dict]
+        Union[tuple, dict]
             Tuple or dictionary of model outputs.
         """
         SNOWPACK, MELTWATER, SM, SUZ, SLZ = states
@@ -347,7 +347,13 @@ class HBV(torch.nn.Module):
         tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        
+
+        snowpack = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        meltwater = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        soil_moisture = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        upper_zone = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        lower_zone = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+
         param_dict ={}
         for t in range(n_steps):
             # Get dynamic parameter values per timestep.
@@ -427,8 +433,14 @@ class HBV(torch.nn.Module):
             tosoil_sim[t, :, :] = tosoil
             PERC_sim[t, :, :] = PERC
 
-        # Get the overall average 
-        # or weighted average using learned weights.
+            # Record model states
+            snowpack[t, :, :] = SNOWPACK
+            meltwater[t, :, :] = MELTWATER
+            soil_moisture[t, :, :] = SM
+            upper_zone[t, :, :] = SUZ
+            lower_zone[t, :, :] = SLZ
+
+        # Get the overall average or weighted average using learned weights.
         if self.muwts is None:
             Qsimavg = Qsimmu.mean(-1)
         else:
@@ -461,7 +473,7 @@ class HBV(torch.nn.Module):
             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
             Q2_rout = UH_conv(rf_Q2, UH).permute([2, 0, 1])
 
-            if self.comprout: 
+            if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
                 Qstemp = Qsrout.view(n_steps, n_grid, self.nmul)
                 if self.muwts is None:
@@ -486,27 +498,38 @@ class HBV(torch.nn.Module):
             
             # Return all sim results.
             out_dict = {
-                'flow_sim': Qs,
-                'srflow': Q0_rout,
-                'ssflow': Q1_rout,
-                'gwflow': Q2_rout,
-                'AET_hydro': AET.mean(-1, keepdim=True),
-                'PET_hydro': PETm.mean(-1, keepdim=True),
-                'SWE': SWE_sim.mean(-1, keepdim=True),
-                'flow_sim_no_rout': Qsim.unsqueeze(dim=2),
-                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),
-                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),
-                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),
-                'recharge': recharge_sim.mean(-1, keepdim=True),
-                'excs': excs_sim.mean(-1, keepdim=True),
-                'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
-                'tosoil': tosoil_sim.mean(-1, keepdim=True),
-                'percolation': PERC_sim.mean(-1, keepdim=True),
-                'BFI_sim': BFI_sim,
+                'flow_sim': Qs,  # Routed Streamflow
+                'srflow': Q0_rout,  # Routed surface runoff
+                'ssflow': Q1_rout,  # Routed subsurface flow
+                'gwflow': Q2_rout,  # Routed groundwater flow
+                'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
+                'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
+                'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
+                'flow_sim_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
+                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
+                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
+                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
+                'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
+                'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
+                'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
+                'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
+                'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
+                'BFI_sim': BFI_sim,  # Baseflow index
             }
-            
+            state_dict = {
+                'snowpack': snowpack.mean(-1, keepdim=True),
+                'meltwater': meltwater.mean(-1, keepdim=True),
+                'soil_moisture': soil_moisture.mean(-1, keepdim=True),
+                'upper_zone': upper_zone.mean(-1, keepdim=True),
+                'lower_zone': lower_zone.mean(-1, keepdim=True),
+            }
+
+            # For surrogate model training, return full parameter dictionary.
+            full_param_dict['rout_a'] = self.routing_param_dict['rout_a'].repeat(n_steps, 1).unsqueeze(-1)
+            full_param_dict['rout_b'] = self.routing_param_dict['rout_b'].repeat(n_steps, 1).unsqueeze(-1)
+
             if not self.warm_up_states:
                 for key in out_dict.keys():
                     if key != 'BFI_sim':
                         out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
-            return out_dict
+            return out_dict, state_dict, full_param_dict

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import torch
 
@@ -26,14 +26,14 @@ class HBVUnitBasin(torch.nn.Module):
 
     Parameters
     ----------
-    config : dict, optional
+    config
         Configuration dictionary.
-    device : torch.device, optional
+    device
         Device to run the model on.
     """
     def __init__(
             self,
-            config: Optional[Dict[str, Any]] = None,
+            config: Optional[dict[str, Any]] = None,
             device: Optional[torch.device] = None
         ) -> None:
         super().__init__()
@@ -94,12 +94,12 @@ class HBVUnitBasin(torch.nn.Module):
     def set_parameters(self) -> None:
         """Get physical parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
-        if self.routing == True:
+        if self.routing:
             self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
             self.routing_param_names = []
 
-        self.learnable_param_count1 = len(self.dynamic_params) * self.nmul 
+        self.learnable_param_count1 = len(self.dynamic_params) * self.nmul
         self.learnable_param_count2 = (len(self.phy_param_names) - len(self.dynamic_params)) * self.nmul \
             + len(self.routing_param_names)
         self.learnable_param_count = self.learnable_param_count1 + self.learnable_param_count2
@@ -107,17 +107,17 @@ class HBVUnitBasin(torch.nn.Module):
     def unpack_parameters(
             self,
             parameters: torch.Tensor,
-        ) -> Dict[str, torch.Tensor]:
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
         ----------
-        parameters : torch.Tensor
+        parameters
             Unprocessed, learned parameters from a neural network.
 
         Returns
         -------
-        Tuple[torch.Tensor, torch.Tensor]
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]
             Tuple of physical and routing parameters.
         """
         phy_param_count = len(self.parameter_bounds)
@@ -142,7 +142,7 @@ class HBVUnitBasin(torch.nn.Module):
             
         # Routing parameters
         routing_params = None
-        if self.routing == True:
+        if self.routing:
             routing_params = parameters[1][:,  dif_count * self.nmul:]
             
         return phy_dy_params, phy_static_params, routing_params
@@ -156,9 +156,9 @@ class HBVUnitBasin(torch.nn.Module):
         
         Parameters
         ----------
-        phy_params : torch.Tensor
+        phy_params
             Normalized physical parameters.
-        dy_list : list
+        dy_list
             List of dynamic parameters.
         
         Returns
@@ -195,7 +195,7 @@ class HBVUnitBasin(torch.nn.Module):
         
         Parameters
         ----------
-        routing_params : torch.Tensor
+        routing_params
             Normalized routing parameters.
 
         Returns
@@ -221,7 +221,7 @@ class HBVUnitBasin(torch.nn.Module):
         
         Parameters
         ----------
-        routing_params : torch.Tensor
+        routing_params
             Normalized routing parameters.
 
         Returns
@@ -241,21 +241,21 @@ class HBVUnitBasin(torch.nn.Module):
 
     def forward(
             self,
-            x_dict: Dict[str, torch.Tensor],
+            x_dict: dict[str, torch.Tensor],
             parameters: torch.Tensor
-        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
+        ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV1.1p.
         
         Parameters
         ----------
-        x_dict : dict
+        x_dict
             Dictionary of input forcing data.
-        parameters : torch.Tensor
+        parameters
             Unprocessed, learned parameters from a neural network.
         
         Returns
         -------
-        Union[Tuple, dict]
+        Union[tuple, dict]
             Tuple or dictionary of model outputs.
         """
         # Unpack input data.
@@ -301,38 +301,38 @@ class HBVUnitBasin(torch.nn.Module):
         )
 
         # Run the model for the remainder of simulation period.
-        return self.PBM( 
-                    x,
-                    Ac,
-                    Elevation,
-                    [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
-                    phy_dy_params_dict,
-                    phy_static_params_dict
-                )
+        return self.PBM(
+            x,
+            Ac,
+            Elevation,
+            [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
+            phy_dy_params_dict,
+            phy_static_params_dict
+        )
 
     def PBM(
             self,
             forcing: torch.Tensor,
             Ac:torch.Tensor,
             Elevation:torch.Tensor,
-            states: Tuple,
-            phy_dy_params_dict: Dict,
-            phy_static_params_dict: Dict
-        ) -> Union[Tuple, Dict[str, torch.Tensor]]:
+            states: tuple,
+            phy_dy_params_dict: dict,
+            phy_static_params_dict: dict
+        ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV1.1p model forward.
         
         Parameters
         ----------
-        forcing : torch.Tensor
+        forcing
             Input forcing data.
-        states : Tuple
+        states
             Initial model states.
-        full_param_dict : dict
+        full_param_dict
             Dictionary of model parameters.
         
         Returns
         -------
-        Union[Tuple, dict]
+        Union[tuple, dict]
             Tuple or dictionary of model outputs.
         """
         SNOWPACK, MELTWATER, SM, SUZ, SLZ = states
@@ -459,7 +459,7 @@ class HBVUnitBasin(torch.nn.Module):
             tosoil_sim[t, :, :] = tosoil
             PERC_sim[t, :, :] = PERC
 
-        # Get the overall average 
+        # Get the overall average
         # or weighted average using learned weights.
         if self.muwts is None:
             Qsimavg = Qsimmu.mean(-1)
@@ -493,7 +493,7 @@ class HBVUnitBasin(torch.nn.Module):
             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
             Q2_rout = UH_conv(rf_Q2, UH).permute([2, 0, 1])
 
-            if self.comprout: 
+            if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
                 Qstemp = Qsrout.view(n_steps, n_grid, self.nmul)
                 if self.muwts is None:
