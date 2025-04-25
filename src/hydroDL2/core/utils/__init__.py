@@ -2,10 +2,12 @@ import os
 from pathlib import Path
 from typing import Union
 
-__all__ = ['get_model_dirs',
-           'get_model_files',
-           '_get_dir'
-           ]
+__all__ = [
+    'get_model_dirs',
+    'get_model_files',
+    '_get_dir',
+]
+
 
 def get_model_dirs(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
     """Get all subdirectories in a given directory.
@@ -57,8 +59,6 @@ def get_model_files(directory: Union[Path, str]) -> tuple[list[Path], list[str]]
 
 def _get_dir(dir_name: str) -> Path:
     """Get the path for the given directory name."""
-    dir = Path('../../' + dir_name)
-    if not os.path.exists(dir):
-        dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        dir = dir.parent.parent / dir_name
+    dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    dir = dir.parent.parent / dir_name
     return dir
