@@ -33,7 +33,7 @@ def test_load_model(model):
     assert issubclass(loaded_model, Module)
 
 
-@pytest.mark.parametrize("model, ver_name", [("prms", "PRMS")])
+@pytest.mark.parametrize("model, ver_name", [("hbv", "HBV")])
 def test_load_model_with_version(model, ver_name):
     loaded_model = load_model(model, ver_name=ver_name)
     assert loaded_model is not None, f"Failed to load model '{model}' with version '{ver_name}'."
