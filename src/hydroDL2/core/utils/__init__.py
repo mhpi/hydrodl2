@@ -2,10 +2,12 @@ import os
 from pathlib import Path
 from typing import List, Union
 
-__all__ = ['get_model_dirs',
-           'get_model_files',
-           '_get_dir'
-           ]
+__all__ = [
+    'get_model_dirs',
+    'get_model_files',
+    '_get_dir',
+]
+
 
 def get_model_dirs(directory: Union[Path, str]) -> tuple[List[Path], List[str]]:
     """Get all subdirectories in a given directory.

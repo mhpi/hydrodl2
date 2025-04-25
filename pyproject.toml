@@ -7,7 +7,7 @@ requires = ["hatchling", "hatch-vcs"]
 [project]
 name = "hydroDL2"
 description = "Hydrology models and modules manager"
-requires-python = ">=3.9"
+readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
     {name = "Leo Lonzarich"},
@@ -18,27 +18,49 @@ maintainers = [
     {name = "Tadd Bindas", email = "taddbindas@gmail.com"},
     {name = "Yalan Song", email = "songyalan1@gmail.com"},
 ]
+requires-python = ">=3.12.0"
+dynamic = ["version"]
 dependencies = [
-    "torch",
-    "numpy",
-    "pandas",
+    "numpy>=2.2.5",
+    "sourcedefender>=15.0.6",
+    "torch>=2.7.0",
+    "torchaudio>=2.7.0",
+    "torchvision>=0.22.0",
+    "uv>=0.6.16",
 ]
-dynamic = ["version"]  # Add this line to indicate dynamic versioning
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
 
+[project.urls]
+Homepage = "https://mhpi.github.io/benchmarks/"
+Repository = "https://github.com/mhpi/hydroDL2"
 
 [project.optional-dependencies]
-test = [
-    "pytest",
-    "pytest-cov",
+dev = [
+    "pytest>=8.3.5",
+    "ruff>=0.11.7",
 ]
 
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/hydroDL2/_version.py"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+xfail_strict = true
+addopts = [
+    "--import-mode=importlib",  # allow using test files with same name
+]
+
 [tool.ruff]
 src = ["src"]
-line-length = 120
+line-length = 88
 lint.select = [
     "F",  # Errors detected by Pyflakes
     "E",  # Error detected by Pycodestyle
@@ -52,32 +74,41 @@ lint.select = [
     "UP",  # pyupgrade
     "RUF100",  # Report unused noqa directives
 ]
+exclude = [
+    ".git",
+    ".vscode",
+    "archive",
+    "dev",
+]
 lint.ignore = [
-    # line too long -> we accept long comment lines; black gets rid of long code lines
+    # Do not perform function call in argument defaults
+    "B008",
+    # Line too long
     "E501",
-    # Do not assign a lambda expression, use a def -> lambda expression assignments are convenient
+    # Do not assign a lambda expression, use a def
     "E731",
-    # allow I, O, l as variable names -> I is the identity matrix
-    "E741",
-    # Missing docstring in public package
-    "D104",
     # Missing docstring in public module
     "D100",
+    # Missing docstring in public package
+    "D104",
+    # Missing docstring in magic method
+    "D105",
     # Missing docstring in __init__
     "D107",
-    # Errors from function calls in argument defaults. These are fine when the result is immutable.
-    "B008",
-    # __magic__ methods are are often self-explanatory, allow missing docstrings
-    "D105",
-    # first line should end with a period [Bug: doesn't work with single-line docstrings]
-    "D400",
-    # First line should be in imperative mood; try rephrasing
-    "D401",
-    ## Disable one in each pair of mutually incompatible rules
-    # We don’t want a blank line before a class docstring
+    # Blank lines before class docstring
     "D203",
-    # We want docstrings to start immediately after the opening triple quote
-    "D213",
+    # 1 blank line required after class docstring
+    "D204",
+    # 1 blank line required between summary line and description
+    "D205",
+    # First line of docstring should be in imperative mood
+    "D401",
+    # Import block is un-sorted or un-formatted; Conflicts with isort
+    "I001",
+    # Blank line contains whitespace
+    "W293",
+    # Disable checks on | operator notation in type hints
+    "UP007",
 ]
 
 [tool.ruff.lint.pydocstyle]
