@@ -2,6 +2,7 @@ import torch
 
 
 def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
+    """Finite difference Jacobian."""
     nb, nx = x.shape
     if perturbed_p == 0:
         ny = nx
@@ -44,6 +45,7 @@ def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
 
 
 def finite_difference_jacobian_P(G, x, p, p2, t,  epsilon, auxG):
+    """Finite difference Jacobian."""
     nb, np = p.shape
     _, np2 = p2.shape
     _, nx = x.shape

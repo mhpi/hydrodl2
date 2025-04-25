@@ -91,7 +91,7 @@ class HBVCapillary(torch.nn.Module):
     def set_parameters(self) -> None:
         """Get physical parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
-        if self.routing == True:
+        if self.routing:
             self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
             self.routing_param_names = []
@@ -127,7 +127,7 @@ class HBVCapillary(torch.nn.Module):
             )
         # Routing parameters
         routing_params = None
-        if self.routing == True:
+        if self.routing:
             routing_params = torch.sigmoid(
                 parameters[-1, :, phy_param_count * self.nmul:]
             )
@@ -156,7 +156,7 @@ class HBVCapillary(torch.nn.Module):
         n_grid = phy_params.size(1)
 
         # TODO: Fix; if dynamic parameters are not entered in config as they are
-        # in HBV params list, then descaling misamtch will occur. Confirm this 
+        # in HBV params list, then descaling misamtch will occur. Confirm this
         # does not happen.
         param_dict = {}
         pmat = torch.ones([1, n_grid, 1]) * self.dy_drop
@@ -164,7 +164,7 @@ class HBVCapillary(torch.nn.Module):
             staPar = phy_params[-1, :, i,:].unsqueeze(0).repeat([n_steps, 1, 1])
             if name in dy_list:
                 dynPar = phy_params[:, :, i,:]
-                drmask = torch.bernoulli(pmat).detach_().cuda() 
+                drmask = torch.bernoulli(pmat).detach_().cuda()
                 comPar = dynPar * (1 - drmask) + staPar * drmask
                 param_dict[name] = change_param_range(
                     param=comPar,
@@ -434,8 +434,7 @@ class HBVCapillary(torch.nn.Module):
             tosoil_sim[t, :, :] = tosoil
             PERC_sim[t, :, :] = PERC
 
-        # Get the overall average 
-        # or weighted average using learned weights.
+        # Get the overall average or weighted average using learned weights.
         if self.muwts is None:
             Qsimavg = Qsimmu.mean(-1)
         else:
@@ -468,7 +467,7 @@ class HBVCapillary(torch.nn.Module):
             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
             Q2_rout = UH_conv(rf_Q2, UH).permute([2, 0, 1])
 
-            if self.comprout: 
+            if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
                 Qstemp = Qsrout.view(n_steps, n_grid, self.nmul)
                 if self.muwts is None:

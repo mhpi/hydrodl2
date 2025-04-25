@@ -1,5 +1,5 @@
 """
-Note: If adding new public methods, please add them to __all__ 
+Note: If adding new public methods, please add them to __all__
 at the top of the file and in api/__init__.py.
 """
 import importlib.util
@@ -7,7 +7,7 @@ import os
 
 from torch.nn import Module
 
-from hydroDL2.core.utils import *
+from hydroDL2.core.utils import get_model_dirs, get_model_files, _get_dir
 
 __all__ = [
     'available_models',
@@ -52,7 +52,7 @@ def _list_available_models() -> list[str]:
     for dir in dirs:
         _, file_names = get_model_files(dir)
         for file in file_names:
-            models.append(file)  
+            models.append(file)
 
     return models
 
@@ -109,8 +109,8 @@ def load_model(model: str, ver_name: str = None) -> Module:
         spec = importlib.util.spec_from_file_location(model, source)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-    except FileNotFoundError:
-        raise ImportError(f"Model '{model}' not found.")
+    except FileNotFoundError as e:
+        raise ImportError(f"Model '{model}' not found.") from e
     
     # Retrieve the version name if specified, otherwise get the first class in the module
     if ver_name:
