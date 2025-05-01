@@ -516,13 +516,13 @@ class HBV(torch.nn.Module):
                 'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
                 'BFI_sim': BFI_sim,  # Baseflow index
             }
-            state_dict = {
-                'snowpack': snowpack.mean(-1, keepdim=True),
-                'meltwater': meltwater.mean(-1, keepdim=True),
-                'soil_moisture': soil_moisture.mean(-1, keepdim=True),
-                'upper_zone': upper_zone.mean(-1, keepdim=True),
-                'lower_zone': lower_zone.mean(-1, keepdim=True),
-            }
+            # state_dict = {
+            #     'snowpack': snowpack.mean(-1, keepdim=True),
+            #     'meltwater': meltwater.mean(-1, keepdim=True),
+            #     'soil_moisture': soil_moisture.mean(-1, keepdim=True),
+            #     'upper_zone': upper_zone.mean(-1, keepdim=True),
+            #     'lower_zone': lower_zone.mean(-1, keepdim=True),
+            # }
 
             # For surrogate model training, return full parameter dictionary.
             full_param_dict['rout_a'] = self.routing_param_dict['rout_a'].repeat(n_steps, 1).unsqueeze(-1)
@@ -532,4 +532,4 @@ class HBV(torch.nn.Module):
                 for key in out_dict.keys():
                     if key != 'BFI_sim':
                         out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
-            return out_dict, state_dict, full_param_dict
+            return out_dict #, state_dict, full_param_dict
