@@ -7,7 +7,7 @@ import os
 
 from torch.nn import Module
 
-from hydroDL2.core.utils import get_model_dirs, get_model_files, _get_dir
+from hydroDL2.core.utils import _get_dir, get_model_dirs, get_model_files
 
 __all__ = [
     'available_models',
