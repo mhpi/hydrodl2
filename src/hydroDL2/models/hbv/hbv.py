@@ -7,20 +7,23 @@ from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
 class HBV(torch.nn.Module):
-    """Multi-component, differentiable PyTorch HBV model.
+    """HBV 1.0 ~
+    Multi-component, differentiable PyTorch HBV model.
 
     Authors
     -------
     -   Farshid Rahmani & Yalan Song, Leo Lonzarich
     -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
-    -   (HBV-light Version 2) Seibert, 2005 (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
+    -   (HBV-light Version 2) Seibert, 2005
+        (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
     
     Publication
     -----------
-    -   Feng, D., Liu, J., Lawson, K., & Shen, C. (2022). Differentiable, learnable,
-        regionalized process-based models with multiphysical outputs can approach
-        state-of-the-art hydrologic prediction accuracy. Water Resources Research,
-        58, e2022WR032404. https://doi.org/10.1029/2022WR032404.
+    -   Dapeng Feng, Jiangtao Liu, Kathryn Lawson, Chaopeng Shen. "Differentiable,
+        learnable, regionalized process-based models with multiphysical outputs
+        can approach state-of-the-art hydrologic prediction accuracy." Water
+        Resources Research (2020), 58, e2022WR032404.
+        https://doi.org/10.1029/2022WR032404.
 
     Parameters
     ----------
@@ -498,14 +501,14 @@ class HBV(torch.nn.Module):
             
             # Return all sim results.
             out_dict = {
-                'flow_sim': Qs,  # Routed Streamflow
+                'streamflow': Qs,  # Routed Streamflow
                 'srflow': Q0_rout,  # Routed surface runoff
                 'ssflow': Q1_rout,  # Routed subsurface flow
                 'gwflow': Q2_rout,  # Routed groundwater flow
                 'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
                 'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
                 'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-                'flow_sim_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
+                'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
                 'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
                 'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
                 'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
@@ -514,7 +517,7 @@ class HBV(torch.nn.Module):
                 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
                 'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
                 'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
-                'BFI_sim': BFI_sim,  # Baseflow index
+                'BFI': BFI_sim,  # Baseflow index
             }
             # state_dict = {
             #     'snowpack': snowpack.mean(-1, keepdim=True),
@@ -530,6 +533,6 @@ class HBV(torch.nn.Module):
 
             if not self.warm_up_states:
                 for key in out_dict.keys():
-                    if key != 'BFI_sim':
+                    if key != 'BFI':
                         out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
             return out_dict #, state_dict, full_param_dict

@@ -6,8 +6,8 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBVCapillary(torch.nn.Module):
-    """
+class CapRiseHBV(torch.nn.Module):
+    """δHBV 1.1p ~
     Multi-component, differentiable Pytorch HBV model with a capillary rise
     modification and option to run without internal state warmup.
 
@@ -15,14 +15,15 @@ class HBVCapillary(torch.nn.Module):
     -------
     -   Yalan Song, Farshid Rahmani, Leo Lonzarich
     -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
-    -   (HBV-light Version 2) Seibert, 2005 (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
+    -   (HBV-light Version 2) Seibert, 2005
+        (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
 
     Publication
     -----------
-    -   Yalan Song, Kamlesh Sawadekar, Jonathan M Frame, et al. Improving
-        Physics-informed, Differentiable Hydrologic Models for Capturing Unseen
-        Extreme Events. ESS Open Archive. August 07, 2024.
-        https://essopenarchive.org/doi/full/10.22541/essoar.172304428.82707157
+    -   Yalan Song, Kamlesh Sawadekar, Jonathan Frame, et al. "Physics-informed,
+        Differentiable Hydrologic  Models for Capturing Unseen Extreme Events."
+        ESS Open Archive (2025).
+        https://doi.org/10.22541/essoar.172304428.82707157/v2.
 
     Parameters
     ----------
@@ -492,28 +493,28 @@ class HBVCapillary(torch.nn.Module):
 
             # Return all sim results.
             out_dict = {
-                'flow_sim': Qs,
-                'srflow': Q0_rout,
-                'ssflow': Q1_rout,
-                'gwflow': Q2_rout,
-                'AET_hydro': AET.mean(-1, keepdim=True),
-                'PET_hydro': PETm.mean(-1, keepdim=True),
-                'SWE': SWE_sim.mean(-1, keepdim=True),
-                'flow_sim_no_rout': Qsim.unsqueeze(dim=2),
-                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),
-                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),
-                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),
-                'recharge': recharge_sim.mean(-1, keepdim=True),
-                'excs': excs_sim.mean(-1, keepdim=True),
-                'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
-                'tosoil': tosoil_sim.mean(-1, keepdim=True),
-                'percolation': PERC_sim.mean(-1, keepdim=True),
-                'capillary': capillary_sim.mean(-1, keepdim=True),
-                'BFI_sim': BFI_sim,
+                'streamflow': Qs,  # Routed Streamflow
+                'srflow': Q0_rout,  # Routed surface runoff
+                'ssflow': Q1_rout,  # Routed subsurface flow
+                'gwflow': Q2_rout,  # Routed groundwater flow
+                'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
+                'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
+                'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
+                'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
+                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
+                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
+                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
+                'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
+                'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
+                'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
+                'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
+                'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
+                'capillary': capillary_sim.mean(-1, keepdim=True),  # Capillary rise
+                'BFI': BFI_sim,  # Baseflow index
             }
             
             if not self.warm_up_states:
                 for key in out_dict.keys():
-                    if key != 'BFI_sim':
+                    if key != 'BFI':
                         out_dict[key] = out_dict[key][self.pred_cutoff:, :, :]
             return out_dict
