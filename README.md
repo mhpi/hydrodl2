@@ -1,46 +1,65 @@
 # HydroDL 2.0: Differentiable Hydrological Model Repository
 
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)]()
+[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.7.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![tests](https://github.com/mhpi/hydroDL2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydroDL2/actions/workflows/pytest.yaml/)
-[![image](https://img.shields.io/github/license/saltstack/salt)](https://github.com/mhpi/hydroDL2/blob/master/LICENSE)
 
-<img src="docs/images/hydrodl2_cover_logo.png" alt="hydroOps" width="500" height="500">
+[![Build](https://github.com/mhpi/hydroDL2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydroDL2/actions/workflows/pytest.yaml/)
+[![License](https://img.shields.io/github/license/saltstack/salt)](https://github.com/mhpi/generic_deltamodel/blob/master/LICENSE)
 
-HydroDL 2.0 is store for hydrology models and modules designed to be used in concert with the generic differential modeling package, [dMG](https://github.com/mhpi/generic_deltaModel). 
+---
 
+<!-- <img src="docs/images/hydrodl2_cover_logo.png" alt="hydroOps" width="500" height="500"> -->
 
-### How to Install:
-```shell
+HydroDL2.0 is store for differentiable hydrology models and modules designed to be used in concert with the generic differential modeling package, [dMG](https://github.com/mhpi/generic_deltamodel).
+
+This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by [Dr. Chaopeng Shen](https://water.engr.psu.edu/shen/). If you find it useful, please cite (dedicated citations are coming):
+
+    Shen, C., et al. (2023). Differentiable modelling to unify machine learning and physical models for geosciences. Nature Reviews Earth & Environment, 4(8), 552–567. <https://doi.org/10.1038/s43017-023-00450-9>.
+
+</br>
+
+## Installation
+
+To install hydroDL2, clone the repo and install in developer mode with [Astral UV](https://docs.astral.sh/uv/) (recommended)
+
+```bash
 git clone https://github.com/mhpi/hydroDL2.git
+
 cd hydrodl2
 uv pip install .
 ```
 
+or with pip
 
-### Developer Mode Installation:
-The same clone as above, but add flag to install the package in editable mode (changes to source code will be reflected in imports)
-```shell
-pip install -e .
+```bash
+pip install .
 ```
 
-### Maintainers:
-See Pyproject.toml for information.
+</br>
 
+## Repo
 
-### Repository Structure:
+```text
+.
+├── src/
+|   └── hydroDL2/ 
+│       ├── api/                   # Main API
+│       |   ├── __init__.py        
+│       |   └── methods.py         # Methods exposed to end-users
+|       ├── core/                  # Methods used internally
+│       ├── models/                # Shared models directory
+│       |   └── hbv/               # HBV models
+|       └── modules/               # Augmentations for dMG models
+└── docs/                          
+```
 
-    .
-    ├── src/
-    |   └── hydroDL2/ 
-    │       ├── api/                   # Main API
-    │       |   ├── __init__.py        
-    │       |   └── methods.py         # Methods exposed to end-users
-    |       ├── core/                  # Methods used internally
-    │       ├── models/                # Shared models directory
-    │       |   └── hbv/               # HBV models
-    |       └── modules/               # Augmentations for dMG models
-    └── docs/                          
+</br>
 
-### Contributing:
-We welcome contributions! Please submit changes via a fork and pull request.
+## Contributing
+
+We welcome contributions! Please submit changes via a fork and pull requests. For more details, refer to [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md).
+
+---
+
+*Please submit an [issue](https://github.com/mhpi/hydroDL2/issues) to report any questions, concerns, bugs, etc.*
