@@ -9,7 +9,7 @@ from hydroDL2.core.calc.FDJacobian import finite_difference_jacobian_P
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBVAdjoint(torch.nn.Module):
+class HbvAdjoint(torch.nn.Module):
     """
     Multi-component PyTorch HBV model using implicit numerical scheme and
     gradient tracking supported by adjoint method.
@@ -34,10 +34,10 @@ class HBVAdjoint(torch.nn.Module):
         Device to run the model on.
     """
     def __init__(
-            self,
-            config: Optional[dict[str, Any]] = None,
-            device: Optional[torch.device] = None
-        ) -> None:
+        self,
+        config: Optional[dict[str, Any]] = None,
+        device: Optional[torch.device] = None
+    ) -> None:
         super().__init__()
         self.name = 'HBV Adjoint'
         self.config = config
@@ -102,11 +102,11 @@ class HBVAdjoint(torch.nn.Module):
             + len(self.routing_param_names)
 
     def unpack_parameters(
-            self,
-            parameters: torch.Tensor,
-            n_steps: int,
-            n_grid: int,
-        ) -> dict[str, torch.Tensor]:
+        self,
+        parameters: torch.Tensor,
+        n_steps: int,
+        n_grid: int,
+    ) -> dict[str, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
@@ -146,11 +146,11 @@ class HBVAdjoint(torch.nn.Module):
         return phy_params, routing_params
 
     def make_phy_parameters(
-            self,
-            phy_params: torch.Tensor,
-            name_list: list,
-            dy_list:list,
-        ) -> torch.Tensor:
+        self,
+        phy_params: torch.Tensor,
+        name_list: list,
+        dy_list:list,
+    ) -> torch.Tensor:
         """Descale physical parameters.
         
         Parameters
@@ -186,10 +186,10 @@ class HBVAdjoint(torch.nn.Module):
             return parstaFull
 
     def descale_rout_parameters(
-            self,
-            rout_params: torch.Tensor,
-            name_list: list,
-        ) -> torch.Tensor:
+        self,
+        rout_params: torch.Tensor,
+        name_list: list,
+    ) -> torch.Tensor:
         """Descale routing parameters.
         
         Parameters
@@ -215,10 +215,10 @@ class HBVAdjoint(torch.nn.Module):
         return parameter_dict
 
     def forward(
-            self,
-            x_dict: dict[str, torch.Tensor],
-            parameters: torch.Tensor
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        x_dict: dict[str, torch.Tensor],
+        parameters: torch.Tensor
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV Adj.
         
         Parameters

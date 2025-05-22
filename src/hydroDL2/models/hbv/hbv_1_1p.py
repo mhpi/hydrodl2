@@ -6,7 +6,7 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class CapRiseHBV(torch.nn.Module):
+class HbvCapRise(torch.nn.Module):
     """δHBV 1.1p ~
     Multi-component, differentiable Pytorch HBV model with a capillary rise
     modification and option to run without internal state warmup.
@@ -33,10 +33,10 @@ class CapRiseHBV(torch.nn.Module):
         Device to run the model on.
     """
     def __init__(
-            self,
-            config: Optional[dict[str, Any]] = None,
-            device: Optional[torch.device] = None
-        ) -> None:
+        self,
+        config: Optional[dict[str, Any]] = None,
+        device: Optional[torch.device] = None
+    ) -> None:
         super().__init__()
         self.name = 'HBV 1.1p'
         self.config = config
@@ -135,10 +135,10 @@ class CapRiseHBV(torch.nn.Module):
         return phy_params, routing_params
 
     def descale_phy_parameters(
-            self,
-            phy_params: torch.Tensor,
-            dy_list:list,
-        ) -> torch.Tensor:
+        self,
+        phy_params: torch.Tensor,
+        dy_list:list,
+    ) -> torch.Tensor:
         """Descale physical parameters.
         
         Parameters
@@ -179,9 +179,9 @@ class CapRiseHBV(torch.nn.Module):
         return param_dict
 
     def descale_rout_parameters(
-            self,
-            routing_params: torch.Tensor
-        ) -> torch.Tensor:
+        self,
+        routing_params: torch.Tensor
+    ) -> torch.Tensor:
         """Descale routing parameters.
         
         Parameters
@@ -205,10 +205,10 @@ class CapRiseHBV(torch.nn.Module):
         return parameter_dict
 
     def forward(
-            self,
-            x_dict: dict[str, torch.Tensor],
-            parameters: torch.Tensor
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        x_dict: dict[str, torch.Tensor],
+        parameters: torch.Tensor
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV1.1p.
         
         Parameters
@@ -298,11 +298,11 @@ class CapRiseHBV(torch.nn.Module):
                 )
 
     def PBM(
-            self,
-            forcing: torch.Tensor,
-            states: tuple,
-            full_param_dict: dict
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        forcing: torch.Tensor,
+        states: tuple,
+        full_param_dict: dict
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV1.1p model forward.
         
         Parameters
