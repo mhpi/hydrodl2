@@ -6,8 +6,9 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HBV(torch.nn.Module):
-    """HBV 1.0 ~
+class Hbv(torch.nn.Module):
+    """HBV 1.0 ~.
+
     Multi-component, differentiable PyTorch HBV model.
 
     Authors
@@ -33,10 +34,10 @@ class HBV(torch.nn.Module):
         Device to run the model on.
     """
     def __init__(
-            self,
-            config: Optional[dict[str, Any]] = None,
-            device: Optional[torch.device] = None
-        ) -> None:
+        self,
+        config: Optional[dict[str, Any]] = None,
+        device: Optional[torch.device] = None
+    ) -> None:
         super().__init__()
         self.name = 'HBV 1.0'
         self.config = config
@@ -101,9 +102,9 @@ class HBV(torch.nn.Module):
             + len(self.routing_param_names)
 
     def unpack_parameters(
-            self,
-            parameters: torch.Tensor,
-        ) -> tuple[torch.Tensor, torch.Tensor]:
+        self,
+        parameters: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
@@ -135,10 +136,10 @@ class HBV(torch.nn.Module):
         return phy_params, routing_params
 
     def descale_phy_parameters(
-            self,
-            phy_params: torch.Tensor,
-            dy_list:list,
-        ) -> torch.Tensor:
+        self,
+        phy_params: torch.Tensor,
+        dy_list:list,
+    ) -> torch.Tensor:
         """Descale physical parameters.
         
         Parameters
@@ -179,9 +180,9 @@ class HBV(torch.nn.Module):
         return param_dict
 
     def descale_rout_parameters(
-            self,
-            routing_params: torch.Tensor
-        ) -> torch.Tensor:
+        self,
+        routing_params: torch.Tensor
+    ) -> torch.Tensor:
         """Descale routing parameters.
         
         Parameters
@@ -205,10 +206,10 @@ class HBV(torch.nn.Module):
         return parameter_dict
 
     def forward(
-            self,
-            x_dict: dict[str, torch.Tensor],
-            parameters: torch.Tensor
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        x_dict: dict[str, torch.Tensor],
+        parameters: torch.Tensor
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV.
         
         Parameters
@@ -298,11 +299,11 @@ class HBV(torch.nn.Module):
                 )
 
     def PBM(
-            self,
-            forcing: torch.Tensor,
-            states: tuple,
-            full_param_dict: dict
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        forcing: torch.Tensor,
+        states: tuple,
+        full_param_dict: dict
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV model forward.
         
         Parameters

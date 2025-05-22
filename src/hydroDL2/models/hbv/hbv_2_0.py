@@ -6,8 +6,9 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class MultiscaleHBV(torch.nn.Module):
-    """δHBV 2.0 ~
+class HbvMultiscale(torch.nn.Module):
+    """δHBV 2.0 ~.
+    
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
     runoff simulation on unit basins.
 
@@ -33,10 +34,10 @@ class MultiscaleHBV(torch.nn.Module):
         Device to run the model on.
     """
     def __init__(
-            self,
-            config: Optional[dict[str, Any]] = None,
-            device: Optional[torch.device] = None
-        ) -> None:
+        self,
+        config: Optional[dict[str, Any]] = None,
+        device: Optional[torch.device] = None
+    ) -> None:
         super().__init__()
         self.name = 'HBV 2.0UH'
         self.config = config
@@ -106,9 +107,9 @@ class MultiscaleHBV(torch.nn.Module):
         self.learnable_param_count = self.learnable_param_count1 + self.learnable_param_count2
 
     def unpack_parameters(
-            self,
-            parameters: torch.Tensor,
-        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self,
+        parameters: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
         
         Parameters
@@ -149,10 +150,10 @@ class MultiscaleHBV(torch.nn.Module):
         return phy_dy_params, phy_static_params, routing_params
 
     def descale_phy_dy_parameters(
-            self,
-            phy_dy_params: torch.Tensor,
-            dy_list:list,
-        ) -> torch.Tensor:
+        self,
+        phy_dy_params: torch.Tensor,
+        dy_list:list,
+    ) -> torch.Tensor:
         """Descale physical parameters.
         
         Parameters
@@ -188,10 +189,10 @@ class MultiscaleHBV(torch.nn.Module):
         return param_dict
 
     def descale_phy_stat_parameters(
-            self,
-            phy_stat_params: torch.Tensor,
-            stat_list:list,
-        ) -> torch.Tensor:
+        self,
+        phy_stat_params: torch.Tensor,
+        stat_list:list,
+    ) -> torch.Tensor:
         """Descale routing parameters.
         
         Parameters
@@ -215,9 +216,9 @@ class MultiscaleHBV(torch.nn.Module):
         return parameter_dict
 
     def descale_rout_parameters(
-            self,
-            routing_params: torch.Tensor
-        ) -> torch.Tensor:
+        self,
+        routing_params: torch.Tensor
+    ) -> torch.Tensor:
         """Descale routing parameters.
         
         Parameters
@@ -241,10 +242,10 @@ class MultiscaleHBV(torch.nn.Module):
         return parameter_dict
 
     def forward(
-            self,
-            x_dict: dict[str, torch.Tensor],
-            parameters: torch.Tensor
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        x_dict: dict[str, torch.Tensor],
+        parameters: torch.Tensor
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV1.1p.
         
         Parameters
@@ -312,14 +313,14 @@ class MultiscaleHBV(torch.nn.Module):
         )
 
     def PBM(
-            self,
-            forcing: torch.Tensor,
-            Ac:torch.Tensor,
-            Elevation:torch.Tensor,
-            states: tuple,
-            phy_dy_params_dict: dict,
-            phy_static_params_dict: dict
-        ) -> Union[tuple, dict[str, torch.Tensor]]:
+        self,
+        forcing: torch.Tensor,
+        Ac:torch.Tensor,
+        Elevation:torch.Tensor,
+        states: tuple,
+        phy_dy_params_dict: dict,
+        phy_static_params_dict: dict
+    ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV1.1p model forward.
         
         Parameters
