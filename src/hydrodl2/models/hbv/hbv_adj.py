@@ -6,7 +6,7 @@ import torch
 from hydrodl2.core.calc import (change_param_range,
                                 finite_difference_jacobian_p, uh_conv,
                                 uh_gamma)
-from hydroDL2.core.calc.batch_jacobian import batchJacobian
+from hydrodl2.core.calc.batch_jacobian import batchJacobian
 
 
 class HbvAdj(torch.nn.Module):

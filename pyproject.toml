@@ -22,6 +22,7 @@ requires-python = ">=3.12.0"
 dynamic = ["version"]
 dependencies = [
     "numpy>=2.3.0",
+    "pre-commit>=4.2.0",
     "sourcedefender>=15.0.12",
     "torch>=2.7.1",
     "torchaudio>=2.7.1",
@@ -36,17 +37,18 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://mhpi.github.io/benchmarks/"
-Repository = "https://github.com/mhpi/hydroDL2"
+Repository = "https://github.com/mhpi/hydrodl2"
 
 [project.optional-dependencies]
 dev = [
+    "ipywidgets>=8.1.7",
     "pytest>=8.4.0",
     "ruff>=0.11.13",
 ]
 
 [tool.hatch]
 version.source = "vcs"
-build.hooks.vcs.version-file = "src/hydroDL2/_version.py"
+build.hooks.vcs.version-file = "src/hydrodl2/_version.py"
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -11,7 +11,7 @@ from torch.nn import Module
 
 from hydrodl2.core.utils import _get_dir, get_model_dirs, get_model_files
 
-log = logging.getLogger("hydroDL2")
+log = logging.getLogger("hydrodl2")
 
 
 def available_models() -> dict[str, list[str]]:
