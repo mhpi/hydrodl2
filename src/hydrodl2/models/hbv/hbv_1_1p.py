@@ -2,8 +2,7 @@ from typing import Any, Optional, Union
 
 import torch
 
-from hydroDL2.core.calc import change_param_range
-from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
+from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
 
 
 class Hbv_1_1p(torch.nn.Module):
@@ -35,7 +34,7 @@ class Hbv_1_1p(torch.nn.Module):
     def __init__(
         self,
         config: Optional[dict[str, Any]] = None,
-        device: Optional[torch.device] = None
+        device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
         self.name = 'HBV 1.1p'
@@ -130,7 +129,7 @@ class Hbv_1_1p(torch.nn.Module):
         routing_params = None
         if self.routing:
             routing_params = torch.sigmoid(
-                parameters[-1, :, phy_param_count * self.nmul:]
+                parameters[-1, :, phy_param_count * self.nmul:],
             )
         return phy_params, routing_params
 
@@ -169,18 +168,18 @@ class Hbv_1_1p(torch.nn.Module):
                 comPar = dynPar * (1 - drmask) + staPar * drmask
                 param_dict[name] = change_param_range(
                     param=comPar,
-                    bounds=self.parameter_bounds[name]
+                    bounds=self.parameter_bounds[name],
                 )
             else:
                 param_dict[name] = change_param_range(
                     param=staPar,
-                    bounds=self.parameter_bounds[name]
+                    bounds=self.parameter_bounds[name],
                 )
         return param_dict
 
     def descale_rout_parameters(
         self,
-        routing_params: torch.Tensor
+        routing_params: torch.Tensor,
     ) -> torch.Tensor:
         """Descale routing parameters.
         
@@ -200,14 +199,14 @@ class Hbv_1_1p(torch.nn.Module):
 
             parameter_dict[name] = change_param_range(
                 param=param,
-                bounds=self.routing_parameter_bounds[name]
+                bounds=self.routing_parameter_bounds[name],
             )
         return parameter_dict
 
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
-        parameters: torch.Tensor
+        parameters: torch.Tensor,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV1.1p.
         
@@ -265,7 +264,7 @@ class Hbv_1_1p(torch.nn.Module):
             with torch.no_grad():
                 phy_param_warmup_dict = self.descale_phy_parameters(
                     phy_params[:warm_up,:,:],
-                    dy_list=[]
+                    dy_list=[],
                 )
                 # Save current model settings.
                 initialize = self.initialize
@@ -278,7 +277,7 @@ class Hbv_1_1p(torch.nn.Module):
                 SNOWPACK, MELTWATER, SM, SUZ, SLZ = self.PBM(
                     x[:warm_up, :, :],
                     [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
-                    phy_param_warmup_dict
+                    phy_param_warmup_dict,
                 )
 
                 # Restore model settings.
@@ -287,21 +286,21 @@ class Hbv_1_1p(torch.nn.Module):
         
         phy_params_dict = self.descale_phy_parameters(
             phy_params[warm_up:,:,:],
-            dy_list=self.dynamic_params
+            dy_list=self.dynamic_params,
         )
         
         # Run the model for the remainder of simulation period.
         return self.PBM(
                     x[warm_up:, :, :],
                     [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
-                    phy_params_dict
+                    phy_params_dict,
                 )
 
     def PBM(
         self,
         forcing: torch.Tensor,
         states: tuple,
-        full_param_dict: dict
+        full_param_dict: dict,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV1.1p model forward.
         
@@ -451,22 +450,22 @@ class Hbv_1_1p(torch.nn.Module):
                 # Average, then do routing.
                 Qsim = Qsimavg
 
-            UH = UH_gamma(
+            UH = uh_gamma(
                 self.routing_param_dict['rout_a'].repeat(n_steps, 1).unsqueeze(-1),
                 self.routing_param_dict['rout_b'].repeat(n_steps, 1).unsqueeze(-1),
-                lenF=15
+                lenF=15,
             )
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
-            Qsrout = UH_conv(rf, UH).permute([2, 0, 1])
+            Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
             # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
             rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = UH_conv(rf_Q0, UH).permute([2, 0, 1])
+            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
             rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = UH_conv(rf_Q1, UH).permute([2, 0, 1])
+            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = UH_conv(rf_Q2, UH).permute([2, 0, 1])
+            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
 
             if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]

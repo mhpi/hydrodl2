@@ -3,10 +3,10 @@ from typing import Any, Optional, Union
 # import sourcedefender
 import torch
 
-from hydroDL2.core.calc import change_param_range
+from hydrodl2.core.calc import (change_param_range,
+                                finite_difference_jacobian_p, uh_conv,
+                                uh_gamma)
 from hydroDL2.core.calc.batch_jacobian import batchJacobian
-from hydroDL2.core.calc.FDJacobian import finite_difference_jacobian_P
-from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
 class HbvAdj(torch.nn.Module):
@@ -36,7 +36,7 @@ class HbvAdj(torch.nn.Module):
     def __init__(
         self,
         config: Optional[dict[str, Any]] = None,
-        device: Optional[torch.device] = None
+        device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
         self.name = 'HBV Adjoint'
@@ -131,7 +131,7 @@ class HbvAdj(torch.nn.Module):
                 parameters.shape[0],
                 parameters.shape[1],
                 phy_param_count,
-                self.nmul
+                self.nmul,
             )
         ## Merge the multi-components into batch dimension for parallel Jacobian
         phy_params = phy_params.permute([0,3,1,2])
@@ -141,7 +141,7 @@ class HbvAdj(torch.nn.Module):
         # Routing parameters
         if self.routing:
             routing_params = torch.sigmoid(
-                parameters[-1, :, phy_param_count * self.nmul:]
+                parameters[-1, :, phy_param_count * self.nmul:],
             )
         return phy_params, routing_params
 
@@ -210,14 +210,14 @@ class HbvAdj(torch.nn.Module):
 
             parameter_dict[name] = change_param_range(
                 param=param,
-                bounds=self.routing_parameter_bounds[name]
+                bounds=self.routing_parameter_bounds[name],
             )
         return parameter_dict
 
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
-        parameters: torch.Tensor
+        parameters: torch.Tensor,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV Adj.
         
@@ -284,14 +284,14 @@ class HbvAdj(torch.nn.Module):
         routa = routy_params_dict['rout_a'].unsqueeze(0).repeat(nt, 1).unsqueeze(-1)
         routb = routy_params_dict['rout_b'].unsqueeze(0).repeat(nt, 1).unsqueeze(-1)
 
-        UH = UH_gamma(routa, routb, lenF=15)  # lenF: folter
+        UH = uh_gamma(routa, routb, lenF=15)  # lenF: folter
         rf = simulation.permute([1, 2, 0])  # dim:gage*var*time
         UH = UH.permute([1, 2, 0])  # dim: gage*var*time
-        Qsrout = UH_conv(rf, UH).permute([2, 0, 1])
+        Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
         # Return all sim results.
         return {
-            'flow_sim': Qsrout
+            'flow_sim': Qsrout,
         }
 
 class HBV(torch.nn.Module):
@@ -527,7 +527,7 @@ class NewtonSolve(torch.autograd.Function):
             resnorm = torch.linalg.norm(gg, float('inf'), dim=[1])
     
         if batchP:
-            dGdp,dGdp2 =  finite_difference_jacobian_P( G, x, p, p2, t, 1e-6, auxG)
+            dGdp,dGdp2 =  finite_difference_jacobian_p( G, x, p, p2, t, 1e-6, auxG)
         
         else:
             assert ("nonbatchp (like NN) pathway not debugged through yet")

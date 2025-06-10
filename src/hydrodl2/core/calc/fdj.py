@@ -44,7 +44,7 @@ def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
     return dGdx, gg_original
 
 
-def finite_difference_jacobian_P(G, x, p, p2, t,  epsilon, auxG):
+def finite_difference_jacobian_p(G, x, p, p2, t,  epsilon, auxG):
     """Finite difference Jacobian."""
     nb, np = p.shape
     _, np2 = p2.shape

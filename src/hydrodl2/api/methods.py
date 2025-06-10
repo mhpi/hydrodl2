@@ -9,7 +9,7 @@ import re
 
 from torch.nn import Module
 
-from hydroDL2.core.utils import _get_dir, get_model_dirs, get_model_files
+from hydrodl2.core.utils import _get_dir, get_model_dirs, get_model_files
 
 log = logging.getLogger("hydroDL2")
 
@@ -126,7 +126,7 @@ def load_model(model: str, ver_name: str = None) -> Module:
 
         log.warning(
             f"Model class '{ver_name}' not found in module '{module.__file__}'. "
-            f"Falling back to the first available: '{classes[0]}'."
+            f"Falling back to the first available: '{classes[0]}'.",
         )
         cls = getattr(module, classes[0])
     
