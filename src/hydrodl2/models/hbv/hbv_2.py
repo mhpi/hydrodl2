@@ -2,12 +2,11 @@ from typing import Any, Optional, Union
 
 import torch
 
-from hydroDL2.core.calc import change_param_range
-from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
+from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
 
 
-class HbvMultiscale(torch.nn.Module):
-    """δHBV 2.0 ~.
+class Hbv_2(torch.nn.Module):
+    """HBV 2.0 ~.
     
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
     runoff simulation on unit basins.
@@ -36,7 +35,7 @@ class HbvMultiscale(torch.nn.Module):
     def __init__(
         self,
         config: Optional[dict[str, Any]] = None,
-        device: Optional[torch.device] = None
+        device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
         self.name = 'HBV 2.0UH'
@@ -85,7 +84,7 @@ class HbvMultiscale(torch.nn.Module):
             self.warm_up = config.get('warm_up', self.warm_up)
             self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
-            self.dynamic_params = config['dynamic_params'].get('HBV_2_0', self.dynamic_params)
+            self.dynamic_params = config['dynamic_params'].get(self.__class__.__name__, self.dynamic_params)
             self.variables = config.get('variables', self.variables)
             self.routing = config.get('routing', self.routing)
             self.comprout = config.get('comprout', self.comprout)
@@ -184,7 +183,7 @@ class HbvMultiscale(torch.nn.Module):
             comPar = dynPar * (1 - drmask) + staPar * drmask
             param_dict[name] = change_param_range(
                 param=comPar,
-                bounds=self.parameter_bounds[name]
+                bounds=self.parameter_bounds[name],
             )
         return param_dict
 
@@ -211,13 +210,13 @@ class HbvMultiscale(torch.nn.Module):
 
             parameter_dict[name] = change_param_range(
                 param=param,
-                bounds=self.parameter_bounds[name]
+                bounds=self.parameter_bounds[name],
             )
         return parameter_dict
 
     def descale_rout_parameters(
         self,
-        routing_params: torch.Tensor
+        routing_params: torch.Tensor,
     ) -> torch.Tensor:
         """Descale routing parameters.
         
@@ -237,14 +236,14 @@ class HbvMultiscale(torch.nn.Module):
 
             parameter_dict[name] = change_param_range(
                 param=param,
-                bounds=self.routing_parameter_bounds[name]
+                bounds=self.routing_parameter_bounds[name],
             )
         return parameter_dict
 
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
-        parameters: torch.Tensor
+        parameters: torch.Tensor,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Forward pass for HBV1.1p.
         
@@ -294,12 +293,12 @@ class HbvMultiscale(torch.nn.Module):
 
         phy_dy_params_dict = self.descale_phy_dy_parameters(
             phy_dy_params,
-            dy_list=self.dynamic_params
+            dy_list=self.dynamic_params,
         )
 
         phy_static_params_dict = self.descale_phy_stat_parameters(
             phy_static_params,
-            stat_list=[param for param in self.phy_param_names if param not in self.dynamic_params]
+            stat_list=[param for param in self.phy_param_names if param not in self.dynamic_params],
         )
 
         # Run the model for the remainder of simulation period.
@@ -309,7 +308,7 @@ class HbvMultiscale(torch.nn.Module):
             Elevation,
             [SNOWPACK, MELTWATER, SM, SUZ, SLZ],
             phy_dy_params_dict,
-            phy_static_params_dict
+            phy_static_params_dict,
         )
 
     def PBM(
@@ -319,7 +318,7 @@ class HbvMultiscale(torch.nn.Module):
         Elevation:torch.Tensor,
         states: tuple,
         phy_dy_params_dict: dict,
-        phy_static_params_dict: dict
+        phy_static_params_dict: dict,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run the HBV1.1p model forward.
         
@@ -478,22 +477,22 @@ class HbvMultiscale(torch.nn.Module):
                 # Average, then do routing.
                 Qsim = Qsimavg
 
-            UH = UH_gamma(
+            UH = uh_gamma(
                 self.routing_param_dict['rout_a'].repeat(n_steps, 1).unsqueeze(-1),
                 self.routing_param_dict['rout_b'].repeat(n_steps, 1).unsqueeze(-1),
-                lenF=15
+                lenF=15,
             )
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
-            Qsrout = UH_conv(rf, UH).permute([2, 0, 1])
+            Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
             # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
             rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = UH_conv(rf_Q0, UH).permute([2, 0, 1])
+            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
             rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = UH_conv(rf_Q1, UH).permute([2, 0, 1])
+            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = UH_conv(rf_Q2, UH).permute([2, 0, 1])
+            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
 
             if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]

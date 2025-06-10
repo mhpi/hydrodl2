@@ -15,7 +15,7 @@ We have a minimal set of standards we would ask you to consider to speed up the 
    - When your changes are ready, run
 
       ```bash
-      cd ./hydroDL2
+      cd ./hydrodl2
       
       isort .
       

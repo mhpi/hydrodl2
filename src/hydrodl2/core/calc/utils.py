@@ -1,4 +1,7 @@
-
+"""
+Note: If adding new public methods, please add them to __all__
+at the top of the file and in calc/__init__.py.
+"""
 import torch
 
 
@@ -21,12 +24,12 @@ def change_param_range(param: torch.Tensor, bounds: list[float]) -> torch.Tensor
     return out
 
 
-def param_bounds_2D(
+def param_bounds_2d(
     params: torch.Tensor,
     num: int,
     bounds: list,
     ndays: int,
-    nmul: int
+    nmul: int,
 ) -> torch.Tensor:
     """Convert a 2D parameter array to a 3D parameter array.
     
@@ -54,6 +57,6 @@ def param_bounds_2D(
             + bounds[0]
     )
     out = out_temp.unsqueeze(0).repeat(ndays, 1, 1).reshape(
-        ndays, params.shape[0], nmul
+        ndays, params.shape[0], nmul,
     )
     return out

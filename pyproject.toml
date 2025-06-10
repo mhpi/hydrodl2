@@ -5,48 +5,50 @@ requires = ["hatchling", "hatch-vcs"]
 # build-backend = "setuptools.build_meta"
 
 [project]
-name = "hydroDL2"
+name = "hydrodl2"
 description = "Hydrological models and modules manager"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 authors = [
-    {name = "Leo Lonzarich"},
-    {name = "Tadd Bindas"},
+    { name = "Leo Lonzarich" },
+    { name = "Tadd Bindas" },
 ]
 maintainers = [
-    {name = "Leo Lonzarich", email = "lglonzaric@gmail.com"},
-    {name = "Tadd Bindas", email = "taddbindas@gmail.com"},
-    {name = "Yalan Song", email = "songyalan1@gmail.com"},
+    { name = "Leo Lonzarich", email = "lglonzaric@gmail.com" },
+    { name = "Tadd Bindas", email = "taddbindas@gmail.com" },
+    { name = "Yalan Song", email = "songyalan1@gmail.com" },
 ]
 requires-python = ">=3.12.0"
 dynamic = ["version"]
 dependencies = [
-    "numpy>=2.2.6",
+    "numpy>=2.3.0",
+    "pre-commit>=4.2.0",
     "sourcedefender>=15.0.12",
-    "torch>=2.7.0",
-    "torchaudio>=2.7.0",
-    "torchvision>=0.22.0",
-    "uv>=0.7.6",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+    "torchvision>=0.22.1",
+    "uv>=0.7.12",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: Free for non-commercial use",
     "Operating System :: OS Independent",
 ]
 
 [project.urls]
 Homepage = "https://mhpi.github.io/benchmarks/"
-Repository = "https://github.com/mhpi/hydroDL2"
+Repository = "https://github.com/mhpi/hydrodl2"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.5",
-    "ruff>=0.11.10",
+    "ipywidgets>=8.1.7",
+    "pytest>=8.4.0",
+    "ruff>=0.11.13",
 ]
 
 [tool.hatch]
 version.source = "vcs"
-build.hooks.vcs.version-file = "src/hydroDL2/_version.py"
+build.hooks.vcs.version-file = "src/hydrodl2/_version.py"
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -73,6 +75,7 @@ lint.select = [
     "BLE",  # flake8-blind-except
     "UP",  # pyupgrade
     "RUF100",  # Report unused noqa directives
+    "COM812",  # Missing trailing comma
 ]
 exclude = [
     ".git",

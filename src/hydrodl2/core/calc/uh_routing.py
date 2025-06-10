@@ -2,8 +2,8 @@ import torch
 import torch.nn.functional as F
 
 
-def UH_gamma(a, b, lenF=10):
-    """UH. a [time (same all time steps), batch, var]."""
+def uh_gamma(a, b, lenF=10):
+    """Unit hydrograph [time (same all time steps), batch, var]."""
     m = a.shape
     lenF = min(a.shape[0], lenF)
     w = torch.zeros([lenF, m[1], m[2]])
@@ -19,9 +19,8 @@ def UH_gamma(a, b, lenF=10):
 
     return w
 
-def UH_conv(x, UH, viewmode=1):
-    r"""
-    Unit hydrograph convolution.
+def uh_conv(x, UH, viewmode=1):
+    r"""Unit hydrograph convolution.
 
     UH is a vector indicating the unit hydrograph the convolved dimension will
     be the last dimension UH convolution is.

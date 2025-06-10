@@ -4,7 +4,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-[![Build](https://github.com/mhpi/hydroDL2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydroDL2/actions/workflows/pytest.yaml/)
+[![Build](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/)
 [![License](https://img.shields.io/github/license/saltstack/salt)](https://github.com/mhpi/generic_deltamodel/blob/master/LICENSE)
 
 ---
@@ -21,38 +21,38 @@ This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by
 
 ## Installation
 
-To install hydroDL2, clone the repo and install in developer mode with [Astral UV](https://docs.astral.sh/uv/) (recommended)
+To install hydrodl2, clone the repo and install in developer mode with [Astral UV](https://docs.astral.sh/uv/) (recommended)
 
-```bash
-git clone https://github.com/mhpi/hydroDL2.git
+    ```bash
+    git clone https://github.com/mhpi/hydrodl2.git
 
-cd hydrodl2
-uv pip install .
-```
+    cd hydrodl2
+    uv pip install .
+    ```
 
 or with pip
 
-```bash
-pip install .
-```
+    ```bash
+    pip install .
+    ```
 
 </br>
 
 ## Repo
 
-```text
-.
-├── src/
-|   └── hydroDL2/ 
-│       ├── api/                   # Main API
-│       |   ├── __init__.py        
-│       |   └── methods.py         # Methods exposed to end-users
-|       ├── core/                  # Methods used internally
-│       ├── models/                # Shared models directory
-│       |   └── hbv/               # HBV models
-|       └── modules/               # Augmentations for dMG models
-└── docs/                          
-```
+    ```text
+    .
+    ├── src/
+    |   └── hydrodl2/ 
+    │       ├── api/                   # Main API
+    │       |   ├── __init__.py        
+    │       |   └── methods.py         # Methods exposed to end-users
+    |       ├── core/                  # Methods used internally
+    │       ├── models/                # Shared models directory
+    │       |   └── hbv/               # HBV models
+    |       └── modules/               # Augmentations for dMG models
+    └── docs/                          
+    ```
 
 </br>
 
@@ -62,4 +62,4 @@ We welcome contributions! Please submit changes via a fork and pull requests. Fo
 
 ---
 
-*Please submit an [issue](https://github.com/mhpi/hydroDL2/issues) to report any questions, concerns, bugs, etc.*
+*Please submit an [issue](https://github.com/mhpi/hydrodl2/issues) to report any questions, concerns, bugs, etc.*

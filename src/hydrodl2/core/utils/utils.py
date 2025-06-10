@@ -1,12 +1,10 @@
+"""
+Note: If adding new public methods, please add them to __all__
+at the top of the file and in utils/__init__.py.
+"""
 import os
 from pathlib import Path
 from typing import Union
-
-__all__ = [
-    'get_model_dirs',
-    'get_model_files',
-    '_get_dir',
-]
 
 
 def get_model_dirs(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
