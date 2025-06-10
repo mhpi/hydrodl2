@@ -1,16 +1,16 @@
+import logging
 import os
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+
 from platformdirs import user_config_dir
-from pathlib import Path
-import logging
-from datetime import datetime
 
 from hydrodl2._version import __version__
-from hydrodl2.api import (available_models, available_modules,
-                                  load_model, load_module)
+from hydrodl2.api import (available_models, available_modules, load_model,
+                          load_module)
 
-log = logging.getLogger("hydrodl2")
+log = logging.getLogger('hydrodl2')
 
 # In case setuptools scm says version is 0.0.0
 assert not __version__.startswith('0.0.0')
@@ -52,7 +52,7 @@ def _check_license_agreement():
                 "Prior authorization must be obtained for commercial \n" \
                 "use. For further details, please contact the Pennsylvania \n" \
                 "State University Office of Technology Management at \n" \
-                "814.865.6277 or otminfo@psu.edu.\n"
+                "814.865.6277 or otminfo@psu.edu.\n",
             )
 
         print("\nThis agreement applies to all named models in this package:\n")
@@ -77,7 +77,7 @@ def _check_license_agreement():
                 config_dir.mkdir(parents=True, exist_ok=True)
                 agreement_file.write_text(
                     f"accepted_on = {datetime.now().isoformat()}Z\nversion = 1\n",
-                    encoding="utf-8"
+                    encoding="utf-8",
                 )
                 log.warning(f"License accepted. Agreement written to {agreement_file}\n")
             except OSError as e:
@@ -85,7 +85,7 @@ def _check_license_agreement():
                     f"Failed to save agreement file {agreement_file}: {e}")
                 print(
                     "You may need to run with administrator privileges to avoid " \
-                    "repeating this process at runtime."
+                    "repeating this process at runtime.",
                 )
         else:
             print("\n>| License agreement not accepted. Exiting. <|")
@@ -93,4 +93,6 @@ def _check_license_agreement():
 
 
 # This only runs once when package is first imported.
-_check_license_agreement()
+if not os.environ.get('CI'):
+    # Skip license check in CI envs (e.g., GitHub Actions)
+    _check_license_agreement()

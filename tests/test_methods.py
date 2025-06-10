@@ -3,7 +3,7 @@ Test API methods.
 
 Tests will run with pytest when pushed to remote, and can also be run manually
 with:
-        $ pytest tests/test_methods.py
+    pytest tests/test_methods.py
 """
 import pytest
 from torch.nn import Module
