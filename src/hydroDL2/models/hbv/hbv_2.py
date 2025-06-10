@@ -6,8 +6,8 @@ from hydroDL2.core.calc import change_param_range
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HbvMultiscale(torch.nn.Module):
-    """δHBV 2.0 ~.
+class Hbv_2(torch.nn.Module):
+    """HBV 2.0 ~.
     
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
     runoff simulation on unit basins.
@@ -85,7 +85,7 @@ class HbvMultiscale(torch.nn.Module):
             self.warm_up = config.get('warm_up', self.warm_up)
             self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
-            self.dynamic_params = config['dynamic_params'].get('HBV_2_0', self.dynamic_params)
+            self.dynamic_params = config['dynamic_params'].get(self.__class__.__name__, self.dynamic_params)
             self.variables = config.get('variables', self.variables)
             self.routing = config.get('routing', self.routing)
             self.comprout = config.get('comprout', self.comprout)

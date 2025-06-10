@@ -9,7 +9,7 @@ from hydroDL2.core.calc.FDJacobian import finite_difference_jacobian_P
 from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 
 
-class HbvAdjoint(torch.nn.Module):
+class HbvAdj(torch.nn.Module):
     """
     Multi-component PyTorch HBV model using implicit numerical scheme and
     gradient tracking supported by adjoint method.
@@ -78,7 +78,7 @@ class HbvAdjoint(torch.nn.Module):
             # Overwrite defaults with config values.
             self.warm_up = config.get('warm_up', self.warm_up)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
-            self.dynamic_params = config['dynamic_params'].get('HBV_adj', self.dynamic_params)
+            self.dynamic_params = config['dynamic_params'].get(self.__class__.__name__, self.dynamic_params)
             self.variables = config.get('variables', self.variables)
             self.routing = config.get('routing', self.routing)
             self.comprout = config.get('comprout', self.comprout)

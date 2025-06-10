@@ -9,7 +9,8 @@ from hydroDL2.core.calc.uh_routing import UH_conv, UH_gamma
 class Hbv(torch.nn.Module):
     """HBV 1.0 ~.
 
-    Multi-component, differentiable PyTorch HBV model.
+    Multi-component, differentiable PyTorch HBV model with option to run without
+    internal state warmup.
 
     Authors
     -------
@@ -80,7 +81,7 @@ class Hbv(torch.nn.Module):
             self.warm_up = config.get('warm_up', self.warm_up)
             self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
-            self.dynamic_params = config['dynamic_params'].get('HBV', self.dynamic_params)
+            self.dynamic_params = config['dynamic_params'].get(self.__class__.__name__, self.dynamic_params)
             self.variables = config.get('variables', self.variables)
             self.routing = config.get('routing', self.routing)
             self.comprout = config.get('comprout', self.comprout)
