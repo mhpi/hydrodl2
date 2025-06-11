@@ -2,16 +2,15 @@
 
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 [![Build](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/)
-[![License](https://img.shields.io/github/license/saltstack/salt)](https://github.com/mhpi/generic_deltamodel/blob/master/LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ---
 
 <!-- <img src="docs/images/hydrodl2_cover_logo.png" alt="hydroOps" width="500" height="500"> -->
 
-HydroDL2.0 is store for differentiable hydrology models and modules designed to be used in concert with the generic differential modeling package, [dMG](https://github.com/mhpi/generic_deltamodel).
+HydroDL 2.0 is store for differentiable hydrology models and modules designed to be used in concert with the generic differential modeling package, [dMG](https://github.com/mhpi/generic_deltamodel).
 
 This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by [Dr. Chaopeng Shen](https://water.engr.psu.edu/shen/). If you find it useful, please cite (dedicated citations are coming):
 
