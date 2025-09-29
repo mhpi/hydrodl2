@@ -12,7 +12,7 @@
 
 A library of hydrological models developed on PyTorch and designed alongside [δMG](https://github.com/mhpi/generic_deltamodel) for the creation of end-to-end [differentiable models](https://www.nature.com/articles/s43017-023-00450-9), enabling parameter learning, bias correction, missing process representation, and more.
 
-See [`δMG/examples`](https://github.com/mhpi/generic_deltamodel/tree/master/example/hydrology) using hydrodl2-based HBV models in for published differentiable parameter learning (dPL) applications.
+See [`δMG/examples`](https://github.com/mhpi/generic_deltamodel/tree/master/example/hydrology) using hydrodl2-based HBV models for published differentiable parameter learning (dPL) applications.
 
 This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by [Dr. Chaopeng Shen](https://water.engr.psu.edu/shen/). If you find it useful, please cite:
 
