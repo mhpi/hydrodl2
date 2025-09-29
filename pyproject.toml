@@ -75,7 +75,7 @@ lint.select = [
     "BLE",  # flake8-blind-except
     "UP",  # pyupgrade
     "RUF100",  # Report unused noqa directives
-    "COM812",  # Missing trailing comma
+    # "COM812",  # Missing trailing comma
 ]
 exclude = [
     ".git",
@@ -126,4 +126,5 @@ convention = "numpy"
 "*.ipynb" = ["E402", "E501", "F401", "F811", "F841", "T201"]
 
 [tool.ruff.format]
+quote-style = "preserve"
 docstring-code-format = true

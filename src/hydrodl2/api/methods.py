@@ -2,6 +2,7 @@
 Note: If adding new public methods, please add them to __all__
 at the top of the file and in api/__init__.py.
 """
+
 import importlib.util
 import logging
 import os
@@ -16,7 +17,7 @@ log = logging.getLogger("hydrodl2")
 
 def available_models() -> dict[str, list[str]]:
     """Identify and list all available models in hydroDL2.
-    
+
     Returns
     -------
     list
@@ -30,14 +31,14 @@ def available_models() -> dict[str, list[str]]:
     for dir in dirs:
         _, file_names = get_model_files(dir)
         models[dir.name] = file_names
-    
+
     return models
 
 
 def _list_available_models() -> list[str]:
     """List all available models in hydroDL2 without the dict nesting
     of available_models().
-        
+
     Returns
     -------
     list
@@ -56,7 +57,7 @@ def _list_available_models() -> list[str]:
 
 def available_modules() -> dict[str, list[str]]:
     """Identify and list all available modules in the hydroDL2.
-    
+
     Returns
     -------
     list
@@ -70,7 +71,7 @@ def available_modules() -> dict[str, list[str]]:
     for dir in dirs:
         _, file_names = get_model_files(dir)
         modules[dir.name] = file_names
-    
+
     return modules
 
 
@@ -85,7 +86,7 @@ def load_model(model: str, ver_name: str = None) -> Module:
         The model name.
     ver_name
         The version name (class) of the model to load within the model file.
-    
+
     Returns
     -------
     Module
@@ -97,13 +98,17 @@ def load_model(model: str, ver_name: str = None) -> Module:
         ver_name = model  # Default to the model name if no version is specified
 
     # Construct file path
-    model = re.sub(r'([a-z])([A-Z])', r'\1_\2', model).lower() # Convert camelCase to snake_case
-    model_dir = model.split('_')[0].lower() # Model class name is first word in snake_case
+    model = re.sub(
+        r'([a-z])([A-Z])', r'\1_\2', model
+    ).lower()  # Convert camelCase to snake_case
+    model_dir = model.split('_')[
+        0
+    ].lower()  # Model class name is first word in snake_case
     model_subpath = os.path.join(model_dir, f'{model}.py')
-    
+
     # Path to the module file in the model directory
     source = os.path.join(parent_dir, model_subpath)
-    
+
     # Load the model dynamically as a module
     try:
         spec = importlib.util.spec_from_file_location(model, source)
@@ -111,14 +116,15 @@ def load_model(model: str, ver_name: str = None) -> Module:
         spec.loader.exec_module(module)
     except ImportError as e:
         raise ImportError(f"Model '{model}' not found.") from e
-    
+
     # Retrieve version name if possible, otherwise get first class in module
     try:
         cls = getattr(module, ver_name)
     except AttributeError as e:
         # Find first class in module (NOTE: not guaranteed accurate)
         classes = [
-            attr for attr in dir(module)
+            attr
+            for attr in dir(module)
             if isinstance(getattr(module, attr), type) and attr != 'Any'
         ]
         if not classes:
@@ -126,10 +132,10 @@ def load_model(model: str, ver_name: str = None) -> Module:
 
         log.warning(
             f"Model class '{ver_name}' not found in module '{module.__file__}'. "
-            f"Falling back to the first available: '{classes[0]}'.",
+            f"Falling back to the first available: '{classes[0]}'."
         )
         cls = getattr(module, classes[0])
-    
+
     return cls
 
 

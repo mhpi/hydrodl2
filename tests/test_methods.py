@@ -5,6 +5,7 @@ Tests will run with pytest when pushed to remote, and can also be run manually
 with:
     pytest tests/test_methods.py
 """
+
 import pytest
 from torch.nn import Module
 
@@ -38,5 +39,9 @@ def test_load_model(model):
 @pytest.mark.parametrize("model, ver_name", [("hbv", "Hbv")])
 def test_load_model_with_version(model, ver_name):
     loaded_model = load_model(model, ver_name=ver_name)
-    assert loaded_model is not None, f"Failed to load model '{model}' with version '{ver_name}'."
-    assert isinstance(loaded_model, type), f"Loaded '{model}' with version '{ver_name}' is not a class."
+    assert loaded_model is not None, (
+        f"Failed to load model '{model}' with version '{ver_name}'."
+    )
+    assert isinstance(loaded_model, type), (
+        f"Loaded '{model}' with version '{ver_name}' is not a class."
+    )

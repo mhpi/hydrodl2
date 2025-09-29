@@ -2,6 +2,7 @@
 Note: If adding new public methods, please add them to __all__
 at the top of the file and in utils/__init__.py.
 """
+
 import os
 from pathlib import Path
 from typing import Union
@@ -9,7 +10,7 @@ from typing import Union
 
 def get_model_dirs(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
     """Get all subdirectories in a given directory.
-    
+
     Parameters
     ----------
     directory
@@ -17,7 +18,7 @@ def get_model_dirs(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
     """
     if isinstance(directory, str):
         directory = Path(directory)
-    
+
     dirs = []
     dir_names = []
     avoid_list = ['__pycache__']
@@ -32,7 +33,7 @@ def get_model_dirs(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
 
 def get_model_files(directory: Union[Path, str]) -> tuple[list[Path], list[str]]:
     """Get all files in a given directory.
-    
+
     Parameters
     ----------
     directory
@@ -40,11 +41,11 @@ def get_model_files(directory: Union[Path, str]) -> tuple[list[Path], list[str]]
     """
     if isinstance(directory, str):
         directory = Path(directory)
-    
+
     files = []
     file_names = []
     avoid_list = ['__init__', '.DS_Store', 'README.md', '.git']
-    
+
     for item in directory.iterdir():
         if item.is_file() and (item.name not in avoid_list):
             files.append(item)
