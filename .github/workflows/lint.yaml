@@ -1,4 +1,4 @@
-name: Pytests
+name: Lint
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  lint:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5.0.0
-  
+
       - name: Install uv + Python
         uses: astral-sh/setup-uv@v6.7.0
         with:
@@ -25,8 +25,10 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: |
-          uv sync --extra dev
+        run: uv sync --extra dev
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Run Ruff check
+        run: uv run ruff check . --config pyproject.toml --output-format=github
+
+      - name: Run Ruff format check
+        run: uv run ruff format . --config pyproject.toml --check

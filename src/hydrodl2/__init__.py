@@ -7,8 +7,7 @@ from pathlib import Path
 from platformdirs import user_config_dir
 
 from hydrodl2._version import __version__
-from hydrodl2.api import (available_models, available_modules, load_model,
-                          load_module)
+from hydrodl2.api import available_models, available_modules, load_model, load_module
 
 log = logging.getLogger('hydrodl2')
 
@@ -44,20 +43,20 @@ def _check_license_agreement():
         except FileNotFoundError:
             # Fallback in case the LICENSE file wasn't packaged correctly
             print(
-                "\n|> Error locating License. Showing summary <|\n" \
-                "By using this software, you agree to the terms specified \n" \
-                "in the Non-Commercial Software License Agreement: \n" \
-                "\nhttps://github.com/mhpi/hydrodl2/blob/master/LICENSE \n" \
-                "\n'hydrodl2' models are free for non-commercial use. \n" \
-                "Prior authorization must be obtained for commercial \n" \
-                "use. For further details, please contact the Pennsylvania \n" \
-                "State University Office of Technology Management at \n" \
-                "814.865.6277 or otminfo@psu.edu.\n",
+                "\n|> Error locating License. Showing summary <|\n"
+                "By using this software, you agree to the terms specified \n"
+                "in the Non-Commercial Software License Agreement: \n"
+                "\nhttps://github.com/mhpi/hydrodl2/blob/master/LICENSE \n"
+                "\n'hydrodl2' models are free for non-commercial use. \n"
+                "Prior authorization must be obtained for commercial \n"
+                "use. For further details, please contact the Pennsylvania \n"
+                "State University Office of Technology Management at \n"
+                "814.865.6277 or otminfo@psu.edu.\n"
             )
 
         print("\nThis agreement applies to all named models in this package:\n")
 
-        if model_classes: # Avoid error if model_classes is empty
+        if model_classes:  # Avoid error if model_classes is empty
             max_len = max(len(model) for model in model_classes) + 2
         else:
             max_len = 0
@@ -71,7 +70,7 @@ def _check_license_agreement():
         print("-" * 40)
 
         response = input("Do you agree to these terms? Type 'Yes' to continue: ")
-        
+
         if response.strip().lower() in ['yes', 'y']:
             try:
                 config_dir.mkdir(parents=True, exist_ok=True)
@@ -79,12 +78,13 @@ def _check_license_agreement():
                     f"accepted_on = {datetime.now().isoformat()}Z\nversion = 1\n",
                     encoding="utf-8",
                 )
-                log.warning(f"License accepted. Agreement written to {agreement_file}\n")
-            except OSError as e:
                 log.warning(
-                    f"Failed to save agreement file {agreement_file}: {e}")
+                    f"License accepted. Agreement written to {agreement_file}\n"
+                )
+            except OSError as e:
+                log.warning(f"Failed to save agreement file {agreement_file}: {e}")
                 print(
-                    "You may need to run with administrator privileges to avoid " \
+                    "You may need to run with administrator privileges to avoid "
                     "repeating this process at runtime.",
                 )
         else:

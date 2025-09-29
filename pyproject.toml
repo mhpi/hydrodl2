@@ -6,28 +6,25 @@ requires = ["hatchling", "hatch-vcs"]
 
 [project]
 name = "hydrodl2"
-description = "Hydrological models and modules manager"
+description = "Differentiable Hydrologic Model Library"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
-    { name = "Leo Lonzarich" },
-    { name = "Tadd Bindas" },
+    { name = "Leo Lonzarich", email = "lglonzaric@gmail.com" },
+    { name = "Yalan Song", email = "songyalan1@gmail.com" },
+    { name = "Tadd Bindas", email = "taddbindas@gmail.com" },
 ]
 maintainers = [
     { name = "Leo Lonzarich", email = "lglonzaric@gmail.com" },
-    { name = "Tadd Bindas", email = "taddbindas@gmail.com" },
-    { name = "Yalan Song", email = "songyalan1@gmail.com" },
 ]
 requires-python = ">=3.12.0"
 dynamic = ["version"]
 dependencies = [
-    "numpy>=2.3.0",
-    "pre-commit>=4.2.0",
-    "sourcedefender>=15.0.12",
-    "torch>=2.7.1",
-    "torchaudio>=2.7.1",
-    "torchvision>=0.22.1",
-    "uv>=0.7.12",
+    "numpy>=2.3.3",
+    "pre-commit>=4.3.0",
+    "sourcedefender>=15.0.14",
+    "torch>=2.8.0",
+    "uv>=0.8.22",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -35,20 +32,23 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ipywidgets>=8.1.7",
+    "pytest>=8.4.2",
+    "ruff>=0.13.2",
+]
+
 [project.urls]
 Homepage = "https://mhpi.github.io/benchmarks/"
 Repository = "https://github.com/mhpi/hydrodl2"
 
-[project.optional-dependencies]
-dev = [
-    "ipywidgets>=8.1.7",
-    "pytest>=8.4.0",
-    "ruff>=0.11.13",
-]
-
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/hydrodl2/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hydrodl2", "tests"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -75,7 +75,7 @@ lint.select = [
     "BLE",  # flake8-blind-except
     "UP",  # pyupgrade
     "RUF100",  # Report unused noqa directives
-    "COM812",  # Missing trailing comma
+    # "COM812",  # Missing trailing comma
 ]
 exclude = [
     ".git",
@@ -112,6 +112,8 @@ lint.ignore = [
     "W293",
     # Disable checks on | operator notation in type hints
     "UP007",
+    # Use `X | None` for type annotations
+    "UP045"
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -121,3 +123,8 @@ convention = "numpy"
 "docs/*" = ["I"]
 "tests/*" = ["D"]
 "*/__init__.py" = ["F401"]
+"*.ipynb" = ["E402", "E501", "F401", "F811", "F841", "T201"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+docstring-code-format = true

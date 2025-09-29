@@ -1,7 +1,7 @@
 import torch
 
 
-def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
+def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG, perturbed_p=0):
     """Finite difference Jacobian."""
     nb, nx = x.shape
     if perturbed_p == 0:
@@ -30,7 +30,6 @@ def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
     else:
         print("perturbed_p is not set corretly")
 
-
     # Compute gg for all perturbed inputs in one run
     ggE = G(xE, pE, p2E, t, [expand_num], auxG).view(nb, ny + 1, nx)
 
@@ -44,16 +43,21 @@ def finite_difference_jacobian(G, x, p, p2, t, epsilon, auxG,perturbed_p = 0):
     return dGdx, gg_original
 
 
-def finite_difference_jacobian_p(G, x, p, p2, t,  epsilon, auxG):
+def finite_difference_jacobian_p(G, x, p, p2, t, epsilon, auxG):
     """Finite difference Jacobian."""
     nb, np = p.shape
     _, np2 = p2.shape
     _, nx = x.shape
 
-    xE = torch.cat([x.repeat_interleave(np  + 1, dim=0),x.repeat_interleave(np2 , dim=0)], dim=0).double()
-    pE = torch.cat([p.repeat_interleave(np  + 1, dim=0),p.repeat_interleave(np2, dim=0)], dim=0).double()
-    p2E = torch.cat( [p2.repeat_interleave(np  + 1, dim=0),p2.repeat_interleave(np2, dim=0)], dim=0).double()
-
+    xE = torch.cat(
+        [x.repeat_interleave(np + 1, dim=0), x.repeat_interleave(np2, dim=0)], dim=0
+    ).double()
+    pE = torch.cat(
+        [p.repeat_interleave(np + 1, dim=0), p.repeat_interleave(np2, dim=0)], dim=0
+    ).double()
+    p2E = torch.cat(
+        [p2.repeat_interleave(np + 1, dim=0), p2.repeat_interleave(np2, dim=0)], dim=0
+    ).double()
 
     perturbation_p = torch.eye(np).unsqueeze(0).expand(nb, -1, -1) * epsilon
     perturbation_p2 = torch.eye(np2).unsqueeze(0).expand(nb, -1, -1) * epsilon
@@ -62,15 +66,19 @@ def finite_difference_jacobian_p(G, x, p, p2, t,  epsilon, auxG):
 
     perturbation_p2 = perturbation_p2.to(x)
 
-    pE[:nb * (np + 1),:] =  pE[:nb * (np + 1),:]  + perturbation_p.reshape(nb * (np + 1), np)
-    p2E[nb * (np + 1):,:] = p2E[nb * (np + 1):,:] + perturbation_p2.reshape(nb * (np2), np2)
+    pE[: nb * (np + 1), :] = pE[: nb * (np + 1), :] + perturbation_p.reshape(
+        nb * (np + 1), np
+    )
+    p2E[nb * (np + 1) :, :] = p2E[nb * (np + 1) :, :] + perturbation_p2.reshape(
+        nb * (np2), np2
+    )
     # Expand x and add perturbations
-   # xE = x.unsqueeze(1).expand(-1, np + 1, -1).reshape(nb * (np + 1), np) + perturbation.reshape(nb * (np + 1), np)
+    # xE = x.unsqueeze(1).expand(-1, np + 1, -1).reshape(nb * (np + 1), np) + perturbation.reshape(nb * (np + 1), np)
 
     # Compute gg for all perturbed inputs in one run
-    ggE = G(xE, pE, p2E, t, [np + 1,np2], auxG)
-    ggE_p = ggE[:nb * (np + 1),:].view(nb, np + 1, nx)
-    ggE_p2 = ggE[nb * (np + 1):,:].view(nb, np2 , nx)
+    ggE = G(xE, pE, p2E, t, [np + 1, np2], auxG)
+    ggE_p = ggE[: nb * (np + 1), :].view(nb, np + 1, nx)
+    ggE_p2 = ggE[nb * (np + 1) :, :].view(nb, np2, nx)
 
     # Extract the original and perturbed gg
     gg_original_p = ggE_p[:, 0, :]

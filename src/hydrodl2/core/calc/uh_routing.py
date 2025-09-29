@@ -7,17 +7,20 @@ def uh_gamma(a, b, lenF=10):
     m = a.shape
     lenF = min(a.shape[0], lenF)
     w = torch.zeros([lenF, m[1], m[2]])
-    aa = F.relu(a[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.1  # minimum 0.1. First dimension of a is repeat
+    aa = (
+        F.relu(a[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.1
+    )  # minimum 0.1. First dimension of a is repeat
     theta = F.relu(b[0:lenF, :, :]).view([lenF, m[1], m[2]]) + 0.5  # minimum 0.5
     t = torch.arange(0.5, lenF * 1.0).view([lenF, 1, 1]).repeat([1, m[1], m[2]])
     t = t.to(aa.device)
-    denom = (aa.lgamma().exp()) * (theta ** aa)
+    denom = (aa.lgamma().exp()) * (theta**aa)
     mid = t ** (aa - 1)
     right = torch.exp(-t / theta)
     w = 1 / denom * mid * right
     w = w / w.sum(0)  # scale to 1 for each UH
 
     return w
+
 
 def uh_conv(x, UH, viewmode=1):
     r"""Unit hydrograph convolution.
@@ -46,7 +49,9 @@ def uh_conv(x, UH, viewmode=1):
         w = UH.view([nb, 1, m])
         groups = nb
 
-    y = F.conv1d(xx, torch.flip(w, [2]), groups=groups, padding=padd, stride=1, bias=None)
+    y = F.conv1d(
+        xx, torch.flip(w, [2]), groups=groups, padding=padd, stride=1, bias=None
+    )
     if padd != 0:
         y = y[:, :, 0:-padd]
     return y.view(mm)
@@ -61,18 +66,39 @@ def source_flow_calculation(config, flow_out, c_NN, after_routing=True):
         area_name = 'area_gages2'
     else:
         print("area of basins are not available among attributes dataset")
-    area = c_NN[:, varC_NN.index(area_name)].unsqueeze(0).unsqueeze(-1).repeat(
-        flow_out['flow_sim'].shape[
-            0], 1, 1)
+    area = (
+        c_NN[:, varC_NN.index(area_name)]
+        .unsqueeze(0)
+        .unsqueeze(-1)
+        .repeat(flow_out['flow_sim'].shape[0], 1, 1)
+    )
     # flow calculation. converting mm/day to m3/sec
     if after_routing:
-        srflow = (1000 / 86400) * area * (flow_out['srflow']).repeat(1, 1, config['nmul'])  # Q_t - gw - ss
-        ssflow = (1000 / 86400) * area * (flow_out['ssflow']).repeat(1, 1, config['nmul'])  # ras
-        gwflow = (1000 / 86400) * area * (flow_out['gwflow']).repeat(1, 1, config['nmul'])
+        srflow = (
+            (1000 / 86400) * area * (flow_out['srflow']).repeat(1, 1, config['nmul'])
+        )  # Q_t - gw - ss
+        ssflow = (
+            (1000 / 86400) * area * (flow_out['ssflow']).repeat(1, 1, config['nmul'])
+        )  # ras
+        gwflow = (
+            (1000 / 86400) * area * (flow_out['gwflow']).repeat(1, 1, config['nmul'])
+        )
     else:
-        srflow = (1000 / 86400) * area * (flow_out['srflow_no_rout']).repeat(1, 1, config['nmul'])  # Q_t - gw - ss
-        ssflow = (1000 / 86400) * area * (flow_out['ssflow_no_rout']).repeat(1, 1, config['nmul'])  # ras
-        gwflow = (1000 / 86400) * area * (flow_out['gwflow_no_rout']).repeat(1, 1, config['nmul'])
+        srflow = (
+            (1000 / 86400)
+            * area
+            * (flow_out['srflow_no_rout']).repeat(1, 1, config['nmul'])
+        )  # Q_t - gw - ss
+        ssflow = (
+            (1000 / 86400)
+            * area
+            * (flow_out['ssflow_no_rout']).repeat(1, 1, config['nmul'])
+        )  # ras
+        gwflow = (
+            (1000 / 86400)
+            * area
+            * (flow_out['gwflow_no_rout']).repeat(1, 1, config['nmul'])
+        )
     # srflow = torch.clamp(srflow, min=0.0)  # to remove the small negative values
     # ssflow = torch.clamp(ssflow, min=0.0)
     # gwflow = torch.clamp(gwflow, min=0.0)
