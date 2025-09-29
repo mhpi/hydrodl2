@@ -1,7 +1,7 @@
-# HydroDL 2.0: Differentiable Hydrological Model Repository
+# HydroDL2: Differentiable Hydrological Models
 
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.7.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
 
 [![Build](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -10,9 +10,11 @@
 
 <!-- <img src="docs/images/hydrodl2_cover_logo.png" alt="hydroOps" width="500" height="500"> -->
 
-HydroDL 2.0 is store for differentiable hydrology models and modules designed to be used in concert with the generic differential modeling package, [dMG](https://github.com/mhpi/generic_deltamodel).
+A library of hydrological models developed on PyTorch and designed alongside [δMG](https://github.com/mhpi/generic_deltamodel) for the creation of end-to-end [differentiable models](https://www.nature.com/articles/s43017-023-00450-9), enabling parameter learning, bias correction, missing process representation, and more.
 
-This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by [Dr. Chaopeng Shen](https://water.engr.psu.edu/shen/). If you find it useful, please cite (dedicated citations are coming):
+See [`δMG/examples`](https://github.com/mhpi/generic_deltamodel/tree/master/example/hydrology) using hydrodl2-based HBV models in for published differentiable parameter learning (dPL) applications.
+
+This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by [Dr. Chaopeng Shen](https://water.engr.psu.edu/shen/). If you find it useful, please cite:
 
     Shen, C., et al. (2023). Differentiable modelling to unify machine learning and physical models for geosciences. Nature Reviews Earth & Environment, 4(8), 552–567. <https://doi.org/10.1038/s43017-023-00450-9>.
 
@@ -20,7 +22,7 @@ This work is mantained by [MHPI](http://water.engr.psu.edu/shen/) and advised by
 
 ## Installation
 
-To install hydrodl2, clone the repo and install in developer mode with [Astral UV](https://docs.astral.sh/uv/) (recommended)
+To install hydrodl2, clone the repo and install with [Astral UV](https://docs.astral.sh/uv/) (recommended):
 
     ```bash
     git clone https://github.com/mhpi/hydrodl2.git
@@ -28,12 +30,7 @@ To install hydrodl2, clone the repo and install in developer mode with [Astral U
     cd hydrodl2
     uv pip install .
     ```
-
-or with pip
-
-    ```bash
-    pip install .
-    ```
+Optionally, add flag `-e` to install in editable mode.
 
 </br>
 
@@ -49,7 +46,7 @@ or with pip
     |       ├── core/                  # Methods used internally
     │       ├── models/                # Shared models directory
     │       |   └── hbv/               # HBV models
-    |       └── modules/               # Augmentations for dMG models
+    |       └── modules/               # Augmentations for δMG models
     └── docs/                          
     ```
 
