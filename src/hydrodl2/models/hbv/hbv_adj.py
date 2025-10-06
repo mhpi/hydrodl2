@@ -186,7 +186,7 @@ class HbvAdj(torch.nn.Module):
                     staPar = parstaFull[:, :, i]
                     dynPar = phy_params[:, :, i]
                     drmask = (
-                        torch.bernoulli(pmat).detach_().cuda()
+                        torch.bernoulli(pmat).detach_().to(self.device)
                     )  # to drop some dynamic parameters as static
                     comPar = dynPar * (1 - drmask) + staPar * drmask
                     parhbvFull[:, :, i] = comPar

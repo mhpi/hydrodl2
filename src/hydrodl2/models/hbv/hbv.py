@@ -171,7 +171,7 @@ class Hbv(torch.nn.Module):
             staPar = phy_params[-1, :, i, :].unsqueeze(0).repeat([n_steps, 1, 1])
             if name in dy_list:
                 dynPar = phy_params[:, :, i, :]
-                drmask = torch.bernoulli(pmat).detach_().cuda()
+                drmask = torch.bernoulli(pmat).detach_().to(self.device)
                 comPar = dynPar * (1 - drmask) + staPar * drmask
                 param_dict[name] = change_param_range(
                     param=comPar,
