@@ -274,7 +274,7 @@ class Hbv_1_1p(torch.nn.Module):
             with torch.no_grad():
                 phy_param_warmup_dict = self.descale_phy_parameters(
                     phy_params[:warm_up, :, :],
-                    dy_list=[],
+                    dy_list=self.dynamic_params,
                 )
                 # Save current model settings.
                 initialize = self.initialize
