@@ -1,4 +1,4 @@
-# Adding Models and Modules to *hydroDL2*
+# Adding Models and Modules to *HydroDL2*
 
 We illustrate this with a hydrology model HBV 1.2.
 
