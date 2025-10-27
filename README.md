@@ -1,7 +1,7 @@
 # HydroDL2: Differentiable Hydrological Models
 
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
+[![Python](https://img.shields.io/badge/python-3.9%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.9.0-EE4C2C?logo=pytorch)](https://pytorch.org/)
 
 [![Build](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/badge.svg?branch=master)](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -39,15 +39,15 @@ Optionally, add flag `-e` to install in editable mode.
     ```text
     .
     ├── src/
-    |   └── hydrodl2/ 
+    |   └── hydrodl2/
     │       ├── api/                   # Main API
-    │       |   ├── __init__.py        
+    │       |   ├── __init__.py
     │       |   └── methods.py         # Methods exposed to end-users
     |       ├── core/                  # Methods used internally
     │       ├── models/                # Shared models directory
     │       |   └── hbv/               # HBV models
     |       └── modules/               # Augmentations for δMG models
-    └── docs/                          
+    └── docs/
     ```
 
 </br>

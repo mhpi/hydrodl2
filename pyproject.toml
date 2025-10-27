@@ -21,7 +21,6 @@ requires-python = ">=3.9.0"
 dynamic = ["version"]
 dependencies = [
     "numpy",
-    "pre-commit",
     "sourcedefender",
     "torch",
     "uv",
@@ -35,6 +34,7 @@ classifiers = [
 [project.optional-dependencies]
 dev = [
     "ipywidgets",
+    "pre-commit",
     "pytest",
     "ruff",
 ]
