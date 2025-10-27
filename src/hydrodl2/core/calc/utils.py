@@ -18,11 +18,10 @@ def change_param_range(param: torch.Tensor, bounds: list[float]) -> torch.Tensor
 
     Returns
     -------
-    out
+    torch.Tensor
         The parameter with the specified bounds.
     """
-    out = param * (bounds[1] - bounds[0]) + bounds[0]
-    return out
+    return param * (bounds[1] - bounds[0]) + bounds[0]
 
 
 def param_bounds_2d(
@@ -49,19 +48,12 @@ def param_bounds_2d(
 
     Returns
     -------
-    out : torch.Tensor
+    torch.Tensor
         The 3D parameter array.
     """
     out_temp = (
         params[:, num * nmul : (num + 1) * nmul] * (bounds[1] - bounds[0]) + bounds[0]
     )
-    out = (
-        out_temp.unsqueeze(0)
-        .repeat(ndays, 1, 1)
-        .reshape(
-            ndays,
-            params.shape[0],
-            nmul,
-        )
+    return (
+        out_temp.unsqueeze(0).repeat(ndays, 1, 1).reshape(ndays, params.shape[0], nmul)
     )
-    return out

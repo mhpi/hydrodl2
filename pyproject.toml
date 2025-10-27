@@ -17,14 +17,13 @@ authors = [
 maintainers = [
     { name = "Leo Lonzarich", email = "lglonzaric@gmail.com" },
 ]
-requires-python = ">=3.12.0"
+requires-python = ">=3.9.0"
 dynamic = ["version"]
 dependencies = [
-    "numpy>=2.3.3",
-    "pre-commit>=4.3.0",
-    "sourcedefender>=15.0.14",
-    "torch>=2.8.0",
-    "uv>=0.8.22",
+    "numpy",
+    "sourcedefender",
+    "torch",
+    "uv",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -34,9 +33,10 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = [
-    "ipywidgets>=8.1.7",
-    "pytest>=8.4.2",
-    "ruff>=0.13.2",
+    "ipywidgets",
+    "pre-commit",
+    "pytest",
+    "ruff",
 ]
 
 [project.urls]

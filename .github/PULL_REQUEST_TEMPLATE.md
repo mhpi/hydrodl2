@@ -5,8 +5,6 @@
 
 ## Description
 
-Fixes # (issue number)
-
 <!-- Describe how you addressed the bug/feature request, what choices you made and why. Changes can be listed as bullet point;
 
 - ...
