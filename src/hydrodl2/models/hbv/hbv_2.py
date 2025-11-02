@@ -356,7 +356,7 @@ class Hbv_2(torch.nn.Module):
             phy_dy_params,
             dy_list=self.dynamic_params,
         )
-        phy_static_params_dict = self.descale_phy_stat_parameters(
+        phy_static_params_dict = self._descale_phy_stat_parameters(
             phy_static_params,
             stat_list=[
                 param
