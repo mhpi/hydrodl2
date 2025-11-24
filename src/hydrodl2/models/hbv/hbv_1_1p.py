@@ -352,10 +352,10 @@ class Hbv_1_1p(torch.nn.Module):
         fluxes, states = self._PBM(x[warm_up:, :, :], current_states, phy_params_dict)
 
         # State caching
-        self._state_cache = [s.detach() for s in states]
+        self._states_cache = [s.detach() for s in states]
 
         if self.cache_states:
-            self.states = self._state_cache
+            self.states = self._states_cache
 
         return fluxes
 

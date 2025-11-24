@@ -380,10 +380,10 @@ class Hbv_2(torch.nn.Module):
         )
 
         # State caching
-        self._state_cache = [s.detach() for s in states]
+        self._states_cache = [s.detach() for s in states]
 
         if self.cache_states:
-            self.states = self._state_cache
+            self.states = self._states_cache
 
         return fluxes
 
