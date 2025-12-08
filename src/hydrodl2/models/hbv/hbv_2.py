@@ -6,14 +6,14 @@ from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
 
 
 class Hbv_2(torch.nn.Module):
-    """HBV 2.0 ~.
+    """HBV 2.0.
 
-    Multi-component, multiscale, differentiable PyTorch HBV model with rainfall
+    Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
     runoff simulation on unit basins.
 
     Authors
     -------
-    -   Yalan Song, Leo Lonzarich
+    -   Yalan Song, Leo Lonzarich, Wencong Yang
     -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
     -   (HBV-light Version 2) Seibert, 2005
         (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
@@ -48,7 +48,8 @@ class Hbv_2(torch.nn.Module):
         self.dynamic_params = []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
-        self.routing = True
+        self.routing = False
+        self.lenF = 15
         self.comprout = False
         self.nearzero = 1e-5
         self.nmul = 1
@@ -380,10 +381,10 @@ class Hbv_2(torch.nn.Module):
         )
 
         # State caching
-        self._state_cache = [s.detach() for s in states]
+        self._state_cache = states
 
         if self.cache_states:
-            self.states = self._state_cache
+            self.states = tuple(s[-1].detach() for s in self._state_cache)
 
         return fluxes
 
@@ -448,6 +449,13 @@ class Hbv_2(torch.nn.Module):
         PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         capillary_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+
+        # NOTE: new for MTS -- Save model states for all time steps.
+        SNOWPACK_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        MELTWATER_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
         param_dict = {}
         for t in range(nsteps):
@@ -541,6 +549,7 @@ class Hbv_2(torch.nn.Module):
             Q2 = param_dict['parK2'] * SLZ
             SLZ = SLZ - Q2
 
+            # --- Outputs ---
             Qsimmu[t, :, :] = Q0 + Q1 + Q2
             Q0_sim[t, :, :] = Q0
             Q1_sim[t, :, :] = Q1
@@ -554,6 +563,13 @@ class Hbv_2(torch.nn.Module):
             evapfactor_sim[t, :, :] = evapfactor
             tosoil_sim[t, :, :] = tosoil
             PERC_sim[t, :, :] = PERC
+
+            # NOTE: new for MTS -- Save model states for all time steps.
+            SNOWPACK_sim[t, :, :] = SNOWPACK
+            MELTWATER_sim[t, :, :] = MELTWATER
+            SM_sim[t, :, :] = SM
+            SUZ_sim[t, :, :] = SUZ
+            SLZ_sim[t, :, :] = SLZ
 
         # Get the average or weighted average using learned weights.
         if self.muwts is None:
@@ -574,7 +590,7 @@ class Hbv_2(torch.nn.Module):
             UH = uh_gamma(
                 self.routing_param_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
                 self.routing_param_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
-                lenF=15,
+                lenF=self.lenF,
             )
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
@@ -603,11 +619,11 @@ class Hbv_2(torch.nn.Module):
             Qs = torch.unsqueeze(Qsimavg, -1)
             Q0_rout = Q1_rout = Q2_rout = None
 
-        states = (SNOWPACK, MELTWATER, SM, SUZ, SLZ)
+        states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
 
         if self.initialize:
             # If initialize is True, only return warmed-up storages.
-            return states
+            return (SNOWPACK, MELTWATER, SM, SUZ, SLZ)
         else:
             # Baseflow index (BFI) calculation
             BFI_sim = (
