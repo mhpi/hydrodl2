@@ -5,25 +5,18 @@ import torch
 from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
 
 
-class Hbv_2(torch.nn.Module):
-    """HBV 2.0.
+class Hbv_2_hourly(torch.nn.Module):
+    """Hourly HBV 2.0.
 
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
     runoff simulation on unit basins.
 
     Authors
     -------
-    -   Yalan Song, Leo Lonzarich, Wencong Yang
+    -   Wencong Yang, Leo Lonzarich, Yalan Song
     -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
     -   (HBV-light Version 2) Seibert, 2005
         (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
-
-    Publication
-    -----------
-    -   Yalan Song, Tadd Bindas, Chaopeng Shen, et al. "High-resolution
-        national-scale water modeling is enhanced by multiscale differentiable
-        physics-informed machine learning." Water Resources Research (2025).
-        https://doi.org/10.1029/2024WR038928.
 
     Parameters
     ----------
@@ -39,9 +32,8 @@ class Hbv_2(torch.nn.Module):
         device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
-        self.name = 'HBV 2.0'
+        self.name = 'Hourly HBV 2.0'
         self.config = config
-        self.initialize = False
         self.warm_up = 0
         self.pred_cutoff = 0
         self.warm_up_states = True
@@ -49,7 +41,7 @@ class Hbv_2(torch.nn.Module):
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
         self.routing = False
-        self.lenF = 15
+        self.lenF = 72
         self.comprout = False
         self.muwts = None
         self.nearzero = 1e-5
@@ -58,6 +50,11 @@ class Hbv_2(torch.nn.Module):
         self.device = device
 
         self.states, self._states_cache = None, None
+
+        self.dt = 1.0 / 24
+        self.use_distr_routing = True
+        self.infiltration = True
+        self.lag_uh = True
 
         self.state_names = [
             'SNOWPACK',  # Snowpack storage
@@ -104,14 +101,33 @@ class Hbv_2(torch.nn.Module):
             'parC': [0, 1],
             'parRT': [0, 20],
             'parAC': [0, 2500],
+            # Infiltration parameters for hourly
+            'parF0': [
+                5.0 / self.dt,
+                120.0 / self.dt,
+            ],  # dry (max) infiltration capacity, mm/day
+            'parFMIN': [0.0, 1.0],  # wet (min) capacity ratio
+            'parALPHA': [0.5, 5.0],  # shape of f(s); larger -> more thresholdy
         }
         self.routing_parameter_bounds = {
-            'route_a': [0, 2.9],
-            'route_b': [0, 6.5],
+            'route_a': [0, 5.0],
+            'route_b': [0, 12.0],
+        }
+        self.distr_parameter_bounds = {
+            'route_a': [0, 5.0],
+            'route_b': [0, 12.0],
+            'route_tau': [0, 48.0],
         }
 
         if not device:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        if not self.infiltration:
+            self.parameter_bounds.pop('parF0')
+            self.parameter_bounds.pop('parFMIN')
+            self.parameter_bounds.pop('parALPHA')
+        if not self.lag_uh:
+            self.distr_parameter_bounds.pop('route_tau')
 
         if config is not None:
             # Overwrite defaults with config values.
@@ -183,14 +199,17 @@ class Hbv_2(torch.nn.Module):
         self.learnable_param_count2 = (
             len(self.phy_param_names) - len(self.dynamic_params)
         ) * self.nmul + len(self.routing_param_names)
+        self.learnable_param_count3 = len(self.distr_parameter_bounds)
         self.learnable_param_count = (
-            self.learnable_param_count1 + self.learnable_param_count2
+            self.learnable_param_count1
+            + self.learnable_param_count2
+            + self.learnable_param_count3
         )
 
     def _unpack_parameters(
         self,
         parameters: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extract physical model and routing parameters from NN output.
 
         Parameters
@@ -227,7 +246,10 @@ class Hbv_2(torch.nn.Module):
         if self.routing:
             routing_params = parameters[1][:, dif_count * self.nmul :]
 
-        return (phy_dy_params, phy_static_params, routing_params)
+        # Distributed routing parameters
+        distr_params = parameters[2]
+
+        return (phy_dy_params, phy_static_params, routing_params, distr_params)
 
     def _descale_phy_dy_parameters(
         self,
@@ -321,6 +343,32 @@ class Hbv_2(torch.nn.Module):
             )
         return parameter_dict
 
+    def _descale_distr_parameters(
+        self,
+        distr_params: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Descale distributed routing parameters.
+
+        Parameters
+        ----------
+        distr_params
+            Normalized distributed routing parameters.
+
+        Returns
+        -------
+        dict
+            Dictionary of descaled distributed routing parameters.
+        """
+        parameter_dict = {}
+        for i, name in enumerate(self.distr_parameter_bounds.keys()):
+            param = distr_params[:, i]
+
+            parameter_dict[name] = change_param_range(
+                param=param,
+                bounds=self.distr_parameter_bounds[name],
+            )
+        return parameter_dict
+
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
@@ -344,12 +392,14 @@ class Hbv_2(torch.nn.Module):
         x = x_dict['x_phy']
         Ac = x_dict['ac_all'].unsqueeze(-1).repeat(1, self.nmul)
         Elevation = x_dict['elev_all'].unsqueeze(-1).repeat(1, self.nmul)
+        outlet_topo = x_dict['outlet_topo']
+        areas = x_dict['areas']
         self.muwts = x_dict.get('muwts', None)
         ngrid = x.shape[1]
 
         # Unpack parameters.
-        phy_dy_params, phy_static_params, routing_params = self._unpack_parameters(
-            parameters
+        phy_dy_params, phy_static_params, routing_params, distr_params = (
+            self._unpack_parameters(parameters)
         )
 
         if self.routing:
@@ -372,6 +422,8 @@ class Hbv_2(torch.nn.Module):
         else:
             current_states = self.states
 
+        distr_params_dict = self._descale_distr_parameters(distr_params)
+
         fluxes, states = self._PBM(
             x,
             Ac,
@@ -379,6 +431,9 @@ class Hbv_2(torch.nn.Module):
             current_states,
             phy_dy_params_dict,
             phy_static_params_dict,
+            outlet_topo,
+            areas,
+            distr_params_dict,
         )
 
         # State caching
@@ -397,10 +452,13 @@ class Hbv_2(torch.nn.Module):
         states: tuple,
         phy_dy_params_dict: dict,
         phy_static_params_dict: dict,
+        outlet_topo: torch.Tensor,
+        areas: torch.Tensor,
+        distr_params_dict: dict,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run through process-based model (PBM).
-
-        Flux outputs are in mm/day.
+        
+        Flux outputs are in mm/hour.
 
         Parameters
         ----------
@@ -416,12 +474,13 @@ class Hbv_2(torch.nn.Module):
         Union[tuple, dict]
             Tuple or dictionary of model outputs.
         """
+        dt = self.dt
         SNOWPACK, MELTWATER, SM, SUZ, SLZ = states
 
         # Forcings
-        P = forcing[:, :, self.variables.index('prcp')]  # Precipitation
+        P = forcing[:, :, self.variables.index('prcp')] / dt  # Precipitation
         T = forcing[:, :, self.variables.index('tmean')]  # Mean air temp
-        PET = forcing[:, :, self.variables.index('pet')]  # Potential ET
+        PET = forcing[:, :, self.variables.index('pet')] / dt  # Potential ET
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
@@ -462,6 +521,14 @@ class Hbv_2(torch.nn.Module):
 
         param_dict = {}
         for t in range(nsteps):
+            # NOTE: new for MTS -- numerical guardrail for long-sequence running
+            SNOWPACK = torch.clamp(SNOWPACK, min=0.0)
+            MELTWATER = torch.clamp(MELTWATER, min=0.0)
+            SM = torch.clamp(SM, min=self.nearzero)
+            SUZ = torch.clamp(SUZ, min=self.nearzero)
+            SLZ = torch.clamp(SLZ, min=self.nearzero)
+            # ------------------------------------------------------------------
+
             # Get dynamic parameter values per timestep.
             for key in phy_dy_params_dict.keys():
                 param_dict[key] = phy_dy_params_dict[key][t, :, :]
@@ -477,12 +544,12 @@ class Hbv_2(torch.nn.Module):
             SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT_new).type(torch.float32))
 
             # Snow -------------------------------
-            SNOWPACK = SNOWPACK + SNOW
+            SNOWPACK = SNOWPACK + SNOW * dt
             melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT_new)
             # melt[melt < 0.0] = 0.0
             melt = torch.clamp(melt, min=0.0)
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
-            melt = torch.min(melt, SNOWPACK)
+            melt = torch.min(melt * dt, SNOWPACK)
             MELTWATER = MELTWATER + melt
             SNOWPACK = SNOWPACK - melt
             refreezing = (
@@ -493,67 +560,96 @@ class Hbv_2(torch.nn.Module):
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
             refreezing = torch.clamp(refreezing, min=0.0)
-            refreezing = torch.min(refreezing, MELTWATER)
+            refreezing = torch.min(refreezing * dt, MELTWATER)
             SNOWPACK = SNOWPACK + refreezing
             MELTWATER = MELTWATER - refreezing
-            tosoil = MELTWATER - (param_dict['parCWH'] * SNOWPACK)
+            tosoil = (MELTWATER - (param_dict['parCWH'] * SNOWPACK)) / dt
             tosoil = torch.clamp(tosoil, min=0.0)
-            MELTWATER = MELTWATER - tosoil
+            MELTWATER = MELTWATER - tosoil * dt
 
-            # Soil and evaporation -------------------------------
-            soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
-            # soil_wetness[soil_wetness < 0.0] = 0.0
-            # soil_wetness[soil_wetness > 1.0] = 1.0
-            soil_wetness = torch.clamp(soil_wetness, min=0.0, max=1.0)
-            recharge = (RAIN + tosoil) * soil_wetness
+            # NOTE: new for MTS -- Hortonian Infiltration Excess
+            if self.infiltration:
+                # Hortonian infiltration excess: infiltration capacity as a function of wetness
+                W = RAIN + tosoil
+                s = torch.clamp(
+                    SM / param_dict['parFC'], 0.0, 1.0 - 0.01
+                )  # relative wetness, safe guard for pow and bf/fp16
+                parFMIN = param_dict['parFMIN'] * param_dict['parF0']
+                with torch.amp.autocast(
+                    device_type='cuda', enabled=False
+                ):  # torch.pow not stable with bf/fp16 when base ~ 0
+                    fcap = parFMIN + (param_dict['parF0'] - parFMIN) * torch.pow(
+                        1.0 - s, param_dict['parALPHA']
+                    )
+                Infiltration = torch.minimum(W, fcap)  # goes into soil
+                IE = torch.clamp(W - fcap, min=0.0)  # Hortonian excess
 
-            SM = SM + RAIN + tosoil - recharge
+                # Soil and evaporation using Infiltration
+                soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
+                soil_wetness = torch.clamp(soil_wetness, 0.0, 1.0)
+                recharge = Infiltration * soil_wetness
+                SM = SM + (Infiltration - recharge) * dt
+            else:
+                soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
+                soil_wetness = torch.clamp(soil_wetness, min=0.0, max=1.0)
+                recharge = (RAIN + tosoil) * soil_wetness
+                SM = SM + (RAIN + tosoil - recharge) * dt
+            # ------------------------------------------------------
 
-            excess = SM - param_dict['parFC']
+            excess = (SM - param_dict['parFC']) / dt
             excess = torch.clamp(excess, min=0.0)
-            SM = SM - excess
+            SM = SM - excess * dt
             # NOTE: Different from HBV 1.0. Add static/dynamicET shape parameter parBETAET.
             evapfactor = (
                 SM / (param_dict['parLP'] * param_dict['parFC'])
             ) ** param_dict['parBETAET']
             evapfactor = torch.clamp(evapfactor, min=0.0, max=1.0)
             ETact = PETm[t, :, :] * evapfactor
-            ETact = torch.min(SM, ETact)
-            SM = torch.clamp(SM - ETact, min=self.nearzero)
+            ETact = torch.min(SM, ETact * dt) / dt
+            SM = torch.clamp(SM - ETact * dt, min=self.nearzero)
 
             # Capillary rise (HBV 1.1p mod) -------------------------------
-            capillary = torch.min(
-                SLZ,
-                param_dict['parC']
-                * SLZ
-                * (1.0 - torch.clamp(SM / param_dict['parFC'], max=1.0)),
+            capillary = (
+                torch.min(
+                    SLZ,
+                    param_dict['parC']
+                    * SLZ
+                    * (1.0 - torch.clamp(SM / param_dict['parFC'], max=1.0))
+                    * dt,
+                )
+                / dt
             )
 
-            SM = torch.clamp(SM + capillary, min=self.nearzero)
-            SLZ = torch.clamp(SLZ - capillary, min=self.nearzero)
+            SM = torch.clamp(SM + capillary * dt, min=self.nearzero)
+            SLZ = torch.clamp(SLZ - capillary * dt, min=self.nearzero)
 
             # Groundwater boxes -------------------------------
-            SUZ = SUZ + recharge + excess
-            PERC = torch.min(SUZ, param_dict['parPERC'])
-            SUZ = SUZ - PERC
+            SUZ = SUZ + (recharge + excess) * dt
+            PERC = torch.min(SUZ, param_dict['parPERC'] * dt) / dt
+            SUZ = SUZ - PERC * dt
             Q0 = param_dict['parK0'] * torch.clamp(SUZ - param_dict['parUZL'], min=0.0)
-            SUZ = SUZ - Q0
+            SUZ = SUZ - Q0 * dt
             Q1 = param_dict['parK1'] * SUZ
-            SUZ = SUZ - Q1
-            SLZ = SLZ + PERC
+            SUZ = SUZ - Q1 * dt
+            SLZ = SLZ + PERC * dt
 
             LF = torch.clamp(
                 (Ac - param_dict['parAC']) / 1000, min=-1, max=1
             ) * param_dict['parRT'] * (Ac < 2500) + torch.exp(
                 torch.clamp(-(Ac - 2500) / 50, min=-10.0, max=0.0)
             ) * param_dict['parRT'] * (Ac >= 2500)
-            SLZ = torch.clamp(SLZ + LF, min=0.0)
+            SLZ = torch.clamp(SLZ + LF * dt, min=0.0)
 
             Q2 = param_dict['parK2'] * SLZ
-            SLZ = SLZ - Q2
+            SLZ = SLZ - Q2 * dt
 
-            # --- Outputs ---
-            Qsimmu[t, :, :] = Q0 + Q1 + Q2
+            # NOTE: new for MTS -- Add Hortonian Infiltration Excess
+            if self.infiltration:
+                Qsimmu[t, :, :] = Q0 + Q1 + Q2 + IE
+            else:
+                Qsimmu[t, :, :] = Q0 + Q1 + Q2
+            # ------------------------------------------------------
+
             Q0_sim[t, :, :] = Q0
             Q1_sim[t, :, :] = Q1
             Q2_sim[t, :, :] = Q2
@@ -600,12 +696,12 @@ class Hbv_2(torch.nn.Module):
             Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
             # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
-            rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
-            rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
-            rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+            # rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+            # Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
+            # rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+            # Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
+            # rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+            # Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
 
             if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
@@ -620,48 +716,154 @@ class Hbv_2(torch.nn.Module):
         else:
             # No routing, only output the average of all model sims.
             Qs = torch.unsqueeze(Qsimavg, -1)
-            Q0_rout = Q1_rout = Q2_rout = None
+            # Q0_rout = Q1_rout = Q2_rout = None
 
         states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
 
-        if self.initialize:
-            # If initialize is True, only return warmed-up storages.
-            return {}, states
-        else:
-            # Baseflow index (BFI) calculation
-            BFI_sim = (
-                100
-                * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
-                    :, 0
-                ]
+        # Baseflow index (BFI) calculation
+        # BFI_sim = (
+        #     100
+        #     * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
+        #         :, 0
+        #     ]
+        # )
+
+        # Return all sim results.
+        flux_dict = {
+            'Qs': Qs * dt,  # Routed Streamflow for units
+            # 'srflow': Q0_rout * dt,  # Routed surface runoff
+            # 'ssflow': Q1_rout * dt,  # Routed subsurface flow
+            # 'gwflow': Q2_rout * dt,  # Routed groundwater flow
+            # 'AET_hydro': AET.mean(-1, keepdim=True) * dt,  # Actual ET
+            # 'PET_hydro': PETm.mean(-1, keepdim=True) * dt,  # Potential ET
+            # 'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
+            # 'streamflow_no_rout': Qsim.unsqueeze(dim=2) * dt,  # Streamflow
+            # 'srflow_no_rout': Q0_sim.mean(-1, keepdim=True) * dt,  # Surface runoff
+            # 'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True) * dt,  # Subsurface flow
+            # 'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True) * dt,  # Groundwater flow
+            # 'recharge': recharge_sim.mean(-1, keepdim=True) * dt,  # Recharge
+            # 'excs': excs_sim.mean(-1, keepdim=True) * dt,  # Excess stored water
+            # 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
+            # 'tosoil': tosoil_sim.mean(-1, keepdim=True) * dt,  # Infiltration
+            # 'percolation': PERC_sim.mean(-1, keepdim=True) * dt,  # Percolation
+            # 'capillary': capillary_sim.mean(-1, keepdim=True) * dt,  # Capillary rise
+            # 'BFI': BFI_sim * dt,  # Baseflow index
+        }
+
+        if not self.warm_up_states:
+            for key in flux_dict.keys():
+                if key != 'BFI':
+                    flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
+
+        if self.use_distr_routing:
+            # Distributed routing for streamflow at gages
+            distr_out_dict = self.distr_routing(
+                Qs=Qs * dt,
+                distr_params_dict=distr_params_dict,
+                outlet_topo=outlet_topo,
+                areas=areas,
             )
+            flux_dict['streamflow'] = distr_out_dict[
+                'Qs_rout'
+            ]
 
-            # Return all sim results.
-            flux_dict = {
-                'streamflow': Qs,  # Routed Streamflow
-                'srflow': Q0_rout,  # Routed surface runoff
-                'ssflow': Q1_rout,  # Routed subsurface flow
-                'gwflow': Q2_rout,  # Routed groundwater flow
-                'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
-                'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
-                'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-                'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
-                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
-                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
-                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
-                'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
-                'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
-                'evapfactor': evapfactor_sim.mean(
-                    -1, keepdim=True
-                ),  # Evaporation factor
-                'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
-                'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
-                'capillary': capillary_sim.mean(-1, keepdim=True),  # Capillary rise
-                'BFI': BFI_sim,  # Baseflow index
-            }
+        return flux_dict, states
 
-            if not self.warm_up_states:
-                for key in flux_dict.keys():
-                    if key != 'BFI':
-                        flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
-            return flux_dict, states
+    def distr_routing(
+        self,
+        Qs: torch.Tensor,
+        distr_params_dict: dict,
+        outlet_topo: torch.Tensor,
+        areas: torch.Tensor,
+    ):
+        """
+        :param Qs: (nsteps, n_units, 1)
+        :param distr_params_dict: dict of (n_pairs, n_params)
+        :param outlet_topo: (n_gages, n_units)
+        :param areas: (n_units,)
+        :return:
+        """
+        device = areas.device
+        nsteps = Qs.size(0)
+        max_lag = self.lenF
+
+        # extract per-pair series
+        Qs_weighted = (
+            Qs * areas[None, :, None]
+        )  # area-weighted runoff, (nsteps, n_units, 1)
+        reach_idx = (outlet_topo == 1).nonzero(as_tuple=False)
+        pair_rows = reach_idx[:, 0].to(device).long()
+        pair_cols = reach_idx[:, 1].to(device).long()
+        Qs_pairs = Qs_weighted[:, pair_cols, :]  # (nsteps, n_pairs, 1)
+
+        # routing via convolution
+        UH = uh_gamma(
+            distr_params_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
+            distr_params_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
+            lenF=max_lag,
+        )
+        if self.lag_uh:  # add a lag to the unit hydrograph
+            UH = self._frac_shift1d(UH, distr_params_dict['route_tau'])
+        rf = Qs_pairs.permute([1, 2, 0]).contiguous()  # (n_pairs, 1, nsteps)
+        UH = UH.permute([1, 2, 0]).contiguous()  # (n_pairs, 1, nsteps)
+        Qs_lagged = uh_conv(rf, UH).squeeze(1).contiguous()  # (n_pairs, nsteps)
+
+        # Group-sum: scatter_add_ along rows
+        n_gages = int(outlet_topo.shape[0])
+        Qs_rout = torch.zeros(
+            n_gages, Qs_lagged.shape[1], device=Qs_lagged.device, dtype=Qs_lagged.dtype
+        )
+        Qs_rout.scatter_add_(
+            0, pair_rows.view(-1, 1).expand(-1, Qs_lagged.shape[1]), Qs_lagged
+        )  # (n_gages, nsteps)
+
+        # Normalize by upstream area
+        denom = (outlet_topo * areas[None, :]).sum(dim=1).unsqueeze(1).clamp(min=1e-6)
+        Qs_rout = Qs_rout / denom
+        Qs_rout = Qs_rout.T.unsqueeze(-1)  # (nsteps, n_gages, 1)
+
+        # output
+        output = {'Qs_rout': Qs_rout}
+        return output
+
+    @staticmethod
+    def _frac_shift1d(w, tau):
+        """
+        Differentiable fractional shift: return w(t - tau) by mixing k- and (k+1)-step shifts.
+        For tau = k + f (0<=f<1): y[t] = (1-f)*w[t-k] + f*w[t-(k+1)].
+        w:   [T,B,V].
+        tau: [B,V]  (>=0 recommended).
+        """
+        T, B, V = w.shape
+        device, dtype = w.device, w.dtype
+
+        # Decompose tau = k + f
+        tau = tau.view(1, B, V).to(dtype)
+        k = torch.floor(tau)  # [1,B,V]
+        f = tau - k  # [1,B,V]
+
+        # Time indices 0..T-1
+        t = torch.arange(T, device=device, dtype=dtype).view(T, 1, 1)  # [T,1,1]
+
+        # Target indices for the two integer shifts
+        i0 = t - k  # corresponds to shift by k
+        i1 = t - (k + 1)  # corresponds to shift by k+1
+
+        # Gather with clamp + explicit zeroing (true zero padding)
+        i0c = i0.clamp(0, T - 1).long()
+        i1c = i1.clamp(0, T - 1).long()
+
+        w0 = torch.gather(w, 0, i0c)
+        w1 = torch.gather(w, 0, i1c)
+
+        mask0 = (i0 >= 0) & (i0 <= T - 1)
+        mask1 = (i1 >= 0) & (i1 <= T - 1)
+        w0 = w0 * mask0.to(dtype)
+        w1 = w1 * mask1.to(dtype)
+
+        # Linear blend: (1-f)*k-shift + f*(k+1)-shift
+        y = (1.0 - f) * w0 + f * w1
+
+        # Renormalize to unit mass per (B,V) -> may cause instability
+        # y = y / y.sum(0).clamp_min(1e-6)
+        return y  # [T,B,V]
