@@ -285,9 +285,11 @@ class Hbv_2_mts(torch.nn.Module):
         high_freq_parameters: list[torch.Tensor],
     ):
         """Map low-frequency parameters to high-frequency parameters."""
-        warmup_phy_dy_params, warmup_phy_static_params, warmup_routing_params = (
-            self.low_freq_model._unpack_parameters(low_freq_parameters)
-        )
+        if low_freq_parameters is not None:
+            warmup_phy_dy_params, warmup_phy_static_params, warmup_routing_params = (
+                self.low_freq_model._unpack_parameters(low_freq_parameters)
+            )
+
         phy_dy_params, phy_static_params, routing_params, distr_params = (
             self.high_freq_model._unpack_parameters(high_freq_parameters)
         )
@@ -295,28 +297,39 @@ class Hbv_2_mts(torch.nn.Module):
         phy_dy_params_dict = self.high_freq_model._descale_phy_dy_parameters(
             phy_dy_params, dy_list=self.high_freq_model.dynamic_params
         )
-        # Keep warmup static params, add high-freq specific static params
-        static_param_names = [
-            param
-            for param in self.high_freq_model.phy_param_names
-            if param not in self.high_freq_model.dynamic_params
-        ]
-        warmup_static_param_names = [
-            param
-            for param in self.low_freq_model.phy_param_names
-            if param not in self.low_freq_model.dynamic_params
-        ]
-        var_indexes = [
-            i
-            for i, param in enumerate(static_param_names)
-            if param not in warmup_static_param_names
-        ]
-        phy_static_params_dict = self.high_freq_model._descale_phy_stat_parameters(
-            torch.concat(
-                [warmup_phy_static_params, phy_static_params[:, var_indexes]], dim=1
-            ),
-            stat_list=static_param_names,
-        )
+
+        if low_freq_parameters is not None:
+            # Keep warmup static params, add high-freq specific static params
+            static_param_names = [
+                param
+                for param in self.high_freq_model.phy_param_names
+                if param not in self.high_freq_model.dynamic_params
+            ]
+            warmup_static_param_names = [
+                param
+                for param in self.low_freq_model.phy_param_names
+                if param not in self.low_freq_model.dynamic_params
+            ]
+            var_indexes = [
+                i
+                for i, param in enumerate(static_param_names)
+                if param not in warmup_static_param_names
+            ]
+            phy_static_params_dict = self.high_freq_model._descale_phy_stat_parameters(
+                torch.concat(
+                    [warmup_phy_static_params, phy_static_params[:, var_indexes]], dim=1
+                ),
+                stat_list=static_param_names,
+            )
+        else:
+            phy_static_params_dict = self.high_freq_model._descale_phy_stat_parameters(
+                phy_static_params,
+                stat_list=[
+                    param
+                    for param in self.high_freq_model.phy_param_names
+                    if param not in self.high_freq_model.dynamic_params
+                ],
+            )
 
         # New distributed params
         distr_params_dict = self.high_freq_model._descale_distr_parameters(distr_params)
