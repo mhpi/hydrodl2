@@ -116,14 +116,15 @@ class Hbv_2_mts(torch.nn.Module):
                 'muwts': x_dict.get('muwts', None),
             }
 
-            _, low_freq_states = self.low_freq_model(
+            self.low_freq_model.states = None
+            self.low_freq_model(
                 low_freq_x_dict,
                 low_freq_parameters,
             )
 
             # Low-frequency states at last timestep
-            self._state_cache[0] = low_freq_states
-            states = self.state_transfer(low_freq_states)
+            self._state_cache[0] = self.low_freq_model.states
+            states = self.state_transfer(self.low_freq_model.states)
 
         # 2. Transfer parameters
         phy_dy_params_dict, phy_static_params_dict, distr_params_dict = (
@@ -155,12 +156,19 @@ class Hbv_2_mts(torch.nn.Module):
             distr_params_dict=distr_params_dict,
         )
 
+        print(round(predictions['Qs'].mean().item(), 8))
+
         # State caching
         self._state_cache[1] = tuple(s.detach() for s in hif_states)
         if self.load_from_cache:
-            self.states = [
-                tuple(s[-1] for s in s_cache) for s_cache in self._state_cache
-            ]
+            new_states = []
+
+            # low-frequency states remain the same
+            new_states.append(self._state_cache[0])
+
+            # high-frequency states updated
+            new_states.append(tuple(s[-1] for s in hif_states))
+            self.states = tuple(new_states)
 
         # Temp: save initial states
         # torch.save(tuple(tuple(s.detach().cpu() for s in states) for states in self._state_cache), "/projects/mhpi/leoglonz/ciroh-ua/dhbv2_mts/ngen_resources/data/dhbv2_mts/models/hfv2.2_15yr/initial_states_2009.pt")
