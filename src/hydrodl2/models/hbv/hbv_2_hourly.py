@@ -51,6 +51,9 @@ class Hbv_2_hourly(torch.nn.Module):
 
         self.states, self._states_cache = None, None
 
+        self._qs_buffer = []
+        self._max_history = 100  # Safe buffer size > lenF (72)
+
         self.dt = 1.0 / 24
         self.use_distr_routing = True
         self.infiltration = True
@@ -457,7 +460,7 @@ class Hbv_2_hourly(torch.nn.Module):
         distr_params_dict: dict,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run through process-based model (PBM).
-        
+
         Flux outputs are in mm/hour.
 
         Parameters
@@ -756,16 +759,36 @@ class Hbv_2_hourly(torch.nn.Module):
                     flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
 
         if self.use_distr_routing:
+            # 1. Get current Raw Runoff
+
+            # 2. Manage Buffer
+            if self.cache_states:
+                self._qs_buffer.append((Qs * dt).detach())
+                # Keep buffer reasonable size (at least lenF + tau)
+                if len(self._qs_buffer) > self._max_history:
+                    self._qs_buffer.pop(0)
+
+                # Create history tensor for convolution
+                # [History+1, Units, 1]
+                qs_history = torch.cat(self._qs_buffer, dim=0)
+            else:
+                # If not caching (e.g. training), use what we have
+                qs_history = Qs * dt
+
             # Distributed routing for streamflow at gages
             distr_out_dict = self.distr_routing(
-                Qs=Qs * dt,
+                Qs=qs_history,
                 distr_params_dict=distr_params_dict,
                 outlet_topo=outlet_topo,
                 areas=areas,
             )
-            flux_dict['streamflow'] = distr_out_dict[
-                'Qs_rout'
-            ]
+            flux_dict['streamflow'] = distr_out_dict['Qs_rout']
+
+            if self.cache_states:
+                # If we passed in history [T], we get out [T]. We only want index -1.
+                flux_dict['streamflow'] = distr_out_dict['Qs_rout'][-1:]
+            else:
+                flux_dict['streamflow'] = distr_out_dict['Qs_rout']
 
         return flux_dict, states
 

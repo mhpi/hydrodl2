@@ -40,10 +40,10 @@ class Hbv_2_mts(torch.nn.Module):
         self.low_freq_model = Hbv_2(low_freq_config, device=device)
         self.low_freq_model.initialize = True
         self.high_freq_model = Hbv_2_hourly(high_freq_config, device=device)
-        self._state_cache = (None, None)
+        self._state_cache = [None, None]
         self.states = (None, None)
         self.load_from_cache = False
-        self.lof_from_cache = False
+        self.use_from_cache = False
 
         # learnable transfer
         self.state_transfer_model = torch.nn.ModuleDict(
@@ -99,11 +99,11 @@ class Hbv_2_mts(torch.nn.Module):
         parameters: tuple[list[torch.Tensor], list[torch.Tensor]],
     ) -> dict[str, torch.Tensor]:
         """Base forward."""
+        # 1. Transfer states
         low_freq_parameters, high_freq_parameters = parameters
 
-        # 1. Transfer states
-        if self.lof_from_cache and (self._state_cache[0] is not None):
-            lof_states = self._state_cache[0]
+        if self.use_from_cache and (self._state_cache[1] is not None):
+            states = self.states[1]
         else:
             low_freq_x_dict = {
                 'x_phy': x_dict['x_phy_low_freq'],
@@ -117,8 +117,7 @@ class Hbv_2_mts(torch.nn.Module):
             )
 
             # Low-frequency states at last timestep
-            tmp_states = [st[-1] for st in self.low_freq_model._state_cache]
-            lof_states = self.state_transfer(tmp_states)
+            self._state_cache[0] = states
 
         # 2. Transfer parameters
         phy_dy_params_dict, phy_static_params_dict, distr_params_dict = (
@@ -142,7 +141,7 @@ class Hbv_2_mts(torch.nn.Module):
             forcing=x,
             Ac=Ac,
             Elevation=Elevation,
-            states=tuple(lof_states),
+            states=tuple(states),
             phy_dy_params_dict=phy_dy_params_dict,
             phy_static_params_dict=phy_static_params_dict,
             outlet_topo=outlet_topo,
@@ -151,12 +150,17 @@ class Hbv_2_mts(torch.nn.Module):
         )
 
         # State caching
-        self._state_cache = (lof_states, hif_states)
+        self._state_cache[1] = tuple(s.detach() for s in hif_states)
+        self._low_freq_parameters_cache = low_freq_parameters
 
         if self.load_from_cache:
-            self.states = tuple(
-                tuple(s[-1].detach() for s in states) for states in self._state_cache
-            )
+            new_states = []
+            # 0: Low Freq (No time dim in cache[0])
+            new_states.append(self._state_cache[0])
+
+            # 1: High Freq (Has time dim in cache[1])
+            new_states.append(tuple(s[-1] for s in self._state_cache[1]))
+            self.states = new_states
 
         # Temp: save initial states
         # torch.save(tuple(tuple(s.detach().cpu() for s in states) for states in self._state_cache), "/projects/mhpi/leoglonz/ciroh-ua/dhbv2_mts/ngen_resources/data/dhbv2_mts/models/hfv2.2_15yr/initial_states_2009.pt")

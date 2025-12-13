@@ -57,7 +57,7 @@ class Hbv_2(torch.nn.Module):
         self.cache_states = False
         self.device = device
 
-        self.states, self._states_cache = None, None
+        self.states, self._state_cache = None, None
 
         self.state_names = [
             'SNOWPACK',  # Snowpack storage
@@ -147,7 +147,7 @@ class Hbv_2(torch.nn.Module):
         tuple[torch.Tensor, ...]
             A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
         """
-        return self._states_cache
+        return self._state_cache
 
     def load_states(
         self,
