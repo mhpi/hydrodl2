@@ -45,17 +45,21 @@ class Hbv_2_mts(torch.nn.Module):
         self.load_from_cache = False
         self.use_from_cache = False
 
-        # learnable transfer
+        # # learnable transfer
+        # self.state_transfer_model = torch.nn.ModuleDict(
+        #     {
+        #         name: torch.nn.Sequential(
+        #             torch.nn.Linear(
+        #                 self.low_freq_model.nmul, self.high_freq_model.nmul
+        #             ),
+        #             torch.nn.ReLU(),
+        #         )
+        #         for name in self.high_freq_model.state_names
+        #     }
+        # )
+        # Identity state transfer
         self.state_transfer_model = torch.nn.ModuleDict(
-            {
-                name: torch.nn.Sequential(
-                    torch.nn.Linear(
-                        self.low_freq_model.nmul, self.high_freq_model.nmul
-                    ),
-                    torch.nn.ReLU(),
-                )
-                for name in self.high_freq_model.state_names
-            }
+            {name: torch.nn.Identity() for name in self.high_freq_model.state_names}
         )
 
         self.train_spatial_chunk_size = high_freq_config['train_spatial_chunk_size']
@@ -111,13 +115,15 @@ class Hbv_2_mts(torch.nn.Module):
                 'elev_all': x_dict['elev_all'],
                 'muwts': x_dict.get('muwts', None),
             }
-            self.low_freq_model(
+
+            _, low_freq_states = self.low_freq_model(
                 low_freq_x_dict,
                 low_freq_parameters,
             )
 
             # Low-frequency states at last timestep
-            self._state_cache[0] = states
+            self._state_cache[0] = low_freq_states
+            states = self.state_transfer(low_freq_states)
 
         # 2. Transfer parameters
         phy_dy_params_dict, phy_static_params_dict, distr_params_dict = (
@@ -151,16 +157,10 @@ class Hbv_2_mts(torch.nn.Module):
 
         # State caching
         self._state_cache[1] = tuple(s.detach() for s in hif_states)
-        self._low_freq_parameters_cache = low_freq_parameters
-
         if self.load_from_cache:
-            new_states = []
-            # 0: Low Freq (No time dim in cache[0])
-            new_states.append(self._state_cache[0])
-
-            # 1: High Freq (Has time dim in cache[1])
-            new_states.append(tuple(s[-1] for s in self._state_cache[1]))
-            self.states = new_states
+            self.states = [
+                tuple(s[-1] for s in s_cache) for s_cache in self._state_cache
+            ]
 
         # Temp: save initial states
         # torch.save(tuple(tuple(s.detach().cpu() for s in states) for states in self._state_cache), "/projects/mhpi/leoglonz/ciroh-ua/dhbv2_mts/ngen_resources/data/dhbv2_mts/models/hfv2.2_15yr/initial_states_2009.pt")
@@ -289,10 +289,9 @@ class Hbv_2_mts(torch.nn.Module):
         high_freq_parameters: list[torch.Tensor],
     ):
         """Map low-frequency parameters to high-frequency parameters."""
-        if low_freq_parameters is not None:
-            warmup_phy_dy_params, warmup_phy_static_params, warmup_routing_params = (
-                self.low_freq_model._unpack_parameters(low_freq_parameters)
-            )
+        warmup_phy_dy_params, warmup_phy_static_params, warmup_routing_params = (
+            self.low_freq_model._unpack_parameters(low_freq_parameters)
+        )
 
         phy_dy_params, phy_static_params, routing_params, distr_params = (
             self.high_freq_model._unpack_parameters(high_freq_parameters)
@@ -302,39 +301,28 @@ class Hbv_2_mts(torch.nn.Module):
             phy_dy_params, dy_list=self.high_freq_model.dynamic_params
         )
 
-        if low_freq_parameters is not None:
-            # Keep warmup static params, add high-freq specific static params
-            static_param_names = [
-                param
-                for param in self.high_freq_model.phy_param_names
-                if param not in self.high_freq_model.dynamic_params
-            ]
-            warmup_static_param_names = [
-                param
-                for param in self.low_freq_model.phy_param_names
-                if param not in self.low_freq_model.dynamic_params
-            ]
-            var_indexes = [
-                i
-                for i, param in enumerate(static_param_names)
-                if param not in warmup_static_param_names
-            ]
-            phy_static_params_dict = self.high_freq_model._descale_phy_stat_parameters(
-                torch.concat(
-                    [warmup_phy_static_params, phy_static_params[:, var_indexes]], dim=1
-                ),
-                stat_list=static_param_names,
-            )
-        else:
-            phy_static_params_dict = self.high_freq_model._descale_phy_stat_parameters(
-                phy_static_params,
-                stat_list=[
-                    param
-                    for param in self.high_freq_model.phy_param_names
-                    if param not in self.high_freq_model.dynamic_params
-                ],
-            )
-
+        # Keep warmup static params, add high-freq specific static params
+        static_param_names = [
+            param
+            for param in self.high_freq_model.phy_param_names
+            if param not in self.high_freq_model.dynamic_params
+        ]
+        warmup_static_param_names = [
+            param
+            for param in self.low_freq_model.phy_param_names
+            if param not in self.low_freq_model.dynamic_params
+        ]
+        var_indexes = [
+            i
+            for i, param in enumerate(static_param_names)
+            if param not in warmup_static_param_names
+        ]
+        phy_static_params_dict = self.high_freq_model._descale_phy_stat_parameters(
+            torch.concat(
+                [warmup_phy_static_params, phy_static_params[:, var_indexes]], dim=1
+            ),
+            stat_list=static_param_names,
+        )
         # New distributed params
         distr_params_dict = self.high_freq_model._descale_distr_parameters(distr_params)
 

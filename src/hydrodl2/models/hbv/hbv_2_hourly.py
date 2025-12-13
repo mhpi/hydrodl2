@@ -32,8 +32,9 @@ class Hbv_2_hourly(torch.nn.Module):
         device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
-        self.name = 'Hourly HBV 2.0'
+        self.name = 'HBV 2.0 Hourly'
         self.config = config
+        self.initialize = False
         self.warm_up = 0
         self.pred_cutoff = 0
         self.warm_up_states = True
@@ -584,14 +585,14 @@ class Hbv_2_hourly(torch.nn.Module):
                     fcap = parFMIN + (param_dict['parF0'] - parFMIN) * torch.pow(
                         1.0 - s, param_dict['parALPHA']
                     )
-                Infiltration = torch.minimum(W, fcap)  # goes into soil
+                infiltration = torch.minimum(W, fcap)  # goes into soil
                 IE = torch.clamp(W - fcap, min=0.0)  # Hortonian excess
 
                 # Soil and evaporation using Infiltration
                 soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
                 soil_wetness = torch.clamp(soil_wetness, 0.0, 1.0)
-                recharge = Infiltration * soil_wetness
-                SM = SM + (Infiltration - recharge) * dt
+                recharge = infiltration * soil_wetness
+                SM = SM + (infiltration - recharge) * dt
             else:
                 soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
                 soil_wetness = torch.clamp(soil_wetness, min=0.0, max=1.0)
@@ -723,74 +724,78 @@ class Hbv_2_hourly(torch.nn.Module):
 
         states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
 
-        # Baseflow index (BFI) calculation
-        # BFI_sim = (
-        #     100
-        #     * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
-        #         :, 0
-        #     ]
-        # )
+        if self.initialize:
+            # If initialize is True, only return warmed-up storages.
+            return {}, states
+        else:
+            # Baseflow index (BFI) calculation
+            # BFI_sim = (
+            #     100
+            #     * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
+            #         :, 0
+            #     ]
+            # )
 
-        # Return all sim results.
-        flux_dict = {
-            'Qs': Qs * dt,  # Routed Streamflow for units
-            # 'srflow': Q0_rout * dt,  # Routed surface runoff
-            # 'ssflow': Q1_rout * dt,  # Routed subsurface flow
-            # 'gwflow': Q2_rout * dt,  # Routed groundwater flow
-            # 'AET_hydro': AET.mean(-1, keepdim=True) * dt,  # Actual ET
-            # 'PET_hydro': PETm.mean(-1, keepdim=True) * dt,  # Potential ET
-            # 'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-            # 'streamflow_no_rout': Qsim.unsqueeze(dim=2) * dt,  # Streamflow
-            # 'srflow_no_rout': Q0_sim.mean(-1, keepdim=True) * dt,  # Surface runoff
-            # 'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True) * dt,  # Subsurface flow
-            # 'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True) * dt,  # Groundwater flow
-            # 'recharge': recharge_sim.mean(-1, keepdim=True) * dt,  # Recharge
-            # 'excs': excs_sim.mean(-1, keepdim=True) * dt,  # Excess stored water
-            # 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
-            # 'tosoil': tosoil_sim.mean(-1, keepdim=True) * dt,  # Infiltration
-            # 'percolation': PERC_sim.mean(-1, keepdim=True) * dt,  # Percolation
-            # 'capillary': capillary_sim.mean(-1, keepdim=True) * dt,  # Capillary rise
-            # 'BFI': BFI_sim * dt,  # Baseflow index
-        }
+            # Return all sim results.
+            flux_dict = {
+                'Qs': Qs * dt,  # Routed Streamflow for units
+                # 'srflow': Q0_rout * dt,  # Routed surface runoff
+                # 'ssflow': Q1_rout * dt,  # Routed subsurface flow
+                # 'gwflow': Q2_rout * dt,  # Routed groundwater flow
+                # 'AET_hydro': AET.mean(-1, keepdim=True) * dt,  # Actual ET
+                # 'PET_hydro': PETm.mean(-1, keepdim=True) * dt,  # Potential ET
+                # 'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
+                # 'streamflow_no_rout': Qsim.unsqueeze(dim=2) * dt,  # Streamflow
+                # 'srflow_no_rout': Q0_sim.mean(-1, keepdim=True) * dt,  # Surface runoff
+                # 'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True) * dt,  # Subsurface flow
+                # 'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True) * dt,  # Groundwater flow
+                # 'recharge': recharge_sim.mean(-1, keepdim=True) * dt,  # Recharge
+                # 'excs': excs_sim.mean(-1, keepdim=True) * dt,  # Excess stored water
+                # 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
+                # 'tosoil': tosoil_sim.mean(-1, keepdim=True) * dt,  # Infiltration
+                # 'percolation': PERC_sim.mean(-1, keepdim=True) * dt,  # Percolation
+                # 'capillary': capillary_sim.mean(-1, keepdim=True) * dt,  # Capillary rise
+                # 'BFI': BFI_sim * dt,  # Baseflow index
+            }
 
-        if not self.warm_up_states:
-            for key in flux_dict.keys():
-                if key != 'BFI':
-                    flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
+            if not self.warm_up_states:
+                for key in flux_dict.keys():
+                    if key != 'BFI':
+                        flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
 
-        if self.use_distr_routing:
-            # 1. Get current Raw Runoff
+            if self.use_distr_routing:
+                # 1. Get current Raw Runoff
 
-            # 2. Manage Buffer
-            if self.cache_states:
-                self._qs_buffer.append((Qs * dt).detach())
-                # Keep buffer reasonable size (at least lenF + tau)
-                if len(self._qs_buffer) > self._max_history:
-                    self._qs_buffer.pop(0)
+                # 2. Manage Buffer
+                if self.cache_states:
+                    self._qs_buffer.append((Qs * dt).detach())
+                    # Keep buffer reasonable size (at least lenF + tau)
+                    if len(self._qs_buffer) > self._max_history:
+                        self._qs_buffer.pop(0)
 
-                # Create history tensor for convolution
-                # [History+1, Units, 1]
-                qs_history = torch.cat(self._qs_buffer, dim=0)
-            else:
-                # If not caching (e.g. training), use what we have
-                qs_history = Qs * dt
+                    # Create history tensor for convolution
+                    # [History+1, Units, 1]
+                    qs_history = torch.cat(self._qs_buffer, dim=0)
+                else:
+                    # If not caching (e.g. training), use what we have
+                    qs_history = Qs * dt
 
-            # Distributed routing for streamflow at gages
-            distr_out_dict = self.distr_routing(
-                Qs=qs_history,
-                distr_params_dict=distr_params_dict,
-                outlet_topo=outlet_topo,
-                areas=areas,
-            )
-            flux_dict['streamflow'] = distr_out_dict['Qs_rout']
-
-            if self.cache_states:
-                # If we passed in history [T], we get out [T]. We only want index -1.
-                flux_dict['streamflow'] = distr_out_dict['Qs_rout'][-1:]
-            else:
+                # Distributed routing for streamflow at gages
+                distr_out_dict = self.distr_routing(
+                    Qs=qs_history,
+                    distr_params_dict=distr_params_dict,
+                    outlet_topo=outlet_topo,
+                    areas=areas,
+                )
                 flux_dict['streamflow'] = distr_out_dict['Qs_rout']
 
-        return flux_dict, states
+                if self.cache_states:
+                    # If we passed in history [T], we get out [T]. We only want index -1.
+                    flux_dict['streamflow'] = distr_out_dict['Qs_rout'][-1:]
+                else:
+                    flux_dict['streamflow'] = distr_out_dict['Qs_rout']
+
+            return flux_dict, states
 
     def distr_routing(
         self,
