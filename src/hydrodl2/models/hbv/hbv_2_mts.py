@@ -156,8 +156,6 @@ class Hbv_2_mts(torch.nn.Module):
             distr_params_dict=distr_params_dict,
         )
 
-        print(round(predictions['Qs'].mean().item(), 8))
-
         # State caching
         self._state_cache[1] = tuple(s.detach() for s in hif_states)
         if self.load_from_cache:
