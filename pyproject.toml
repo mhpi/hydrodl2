@@ -12,6 +12,7 @@ license = { file = "LICENSE" }
 authors = [
     { name = "Leo Lonzarich", email = "lglonzaric@gmail.com" },
     { name = "Yalan Song", email = "songyalan1@gmail.com" },
+    { name = "Wencong Yang", email = "yangwconion@gmail.com" },
     { name = "Tadd Bindas", email = "taddbindas@gmail.com" },
 ]
 maintainers = [

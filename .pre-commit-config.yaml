@@ -10,7 +10,7 @@ repos:
       - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.2
+    rev: v0.14.8
     hooks:
       - id: ruff-check
         types_or: [python, pyi, jupyter]
@@ -20,7 +20,7 @@ repos:
         args: [--config, pyproject.toml]
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.8.1
+    rev: 0.8.2
     hooks:
       - id: nbstripout
         types: [jupyter]
