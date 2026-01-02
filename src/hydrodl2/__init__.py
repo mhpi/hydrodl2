@@ -1,6 +1,7 @@
 # src/hydrodl2/__init__.py
 import logging
 import os
+import sys
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
@@ -93,23 +94,23 @@ def _check_license_agreement():
             raise SystemExit(1)
 
 
-def is_docker():
-    """Returns True if running inside a Docker container."""
-    # Check for the .dockerenv file created by the Docker engine
+def _should_skip_license():
+    """Returns True if the license check should be bypassed."""
+    # 1. Check if we are in a Non-Interactive shell (No user to type 'Yes')
+    if not sys.stdin.isatty():
+        return True
+
+    # 2. Check for common 'Silent' or 'CI' flags
+    if os.environ.get('CI') or os.environ.get('NGEN_SILENT'):
+        return True
+
+    # 3. Check for the Docker flag (as a fallback)
     if os.path.exists('/.dockerenv'):
         return True
-    # Fallback: check /proc/1/cgroup for "docker" strings
-    try:
-        with open('/proc/1/cgroup') as ifh:
-            return 'docker' in ifh.read()
-    except FileNotFoundError:
-        return False
 
+    return False
 
-if not any([os.environ.get('CI'), os.environ.get('NGEN'), is_docker()]):
-    _check_license_agreement()
 
 # This only runs once when package is first imported.
-# Skip license check in Docker or CI envs (e.g., GitHub Actions)
-if not any([os.environ.get('CI'), os.environ.get('NGEN'), is_docker()]):
+if not _should_skip_license():
     _check_license_agreement()
