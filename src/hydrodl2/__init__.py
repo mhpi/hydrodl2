@@ -1,3 +1,4 @@
+# src/hydrodl2/__init__.py
 import logging
 import os
 from datetime import datetime
@@ -92,7 +93,23 @@ def _check_license_agreement():
             raise SystemExit(1)
 
 
+def is_docker():
+    """Returns True if running inside a Docker container."""
+    # Check for the .dockerenv file created by the Docker engine
+    if os.path.exists('/.dockerenv'):
+        return True
+    # Fallback: check /proc/1/cgroup for "docker" strings
+    try:
+        with open('/proc/1/cgroup') as ifh:
+            return 'docker' in ifh.read()
+    except FileNotFoundError:
+        return False
+
+
+if not any([os.environ.get('CI'), os.environ.get('NGEN'), is_docker()]):
+    _check_license_agreement()
+
 # This only runs once when package is first imported.
-if not os.environ.get('CI'):
-    # Skip license check in CI envs (e.g., GitHub Actions)
+# Skip license check in Docker or CI envs (e.g., GitHub Actions)
+if not any([os.environ.get('CI'), os.environ.get('NGEN'), is_docker()]):
     _check_license_agreement()
