@@ -1,5 +1,7 @@
+# src/hydrodl2/__init__.py
 import logging
 import os
+import sys
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
@@ -69,7 +71,13 @@ def _check_license_agreement():
 
         print("-" * 40)
 
-        response = input("Do you agree to these terms? Type 'Yes' to continue: ")
+        try:
+            response = input("Do you agree to these terms? Type 'Yes' to continue: ")
+        except EOFError:
+            # If we get here, it means we're in an environment that can't take
+            # input -- default to no agreement.
+            print("\n[!] No terminal detected. Skipping license prompt.")
+            return
 
         if response.strip().lower() in ['yes', 'y']:
             try:
@@ -92,7 +100,23 @@ def _check_license_agreement():
             raise SystemExit(1)
 
 
+def _should_skip_license():
+    """Returns True if the license check should be bypassed."""
+    # 1. Check if we are in a Non-Interactive shell (No user to type 'Yes')
+    if not sys.stdin.isatty():
+        return True
+
+    # 2. Check for common 'Silent' or 'CI' flags
+    if os.environ.get('CI') or os.environ.get('NGEN_SILENT'):
+        return True
+
+    # 3. Check for the Docker flag (as a fallback)
+    if os.path.exists('/.dockerenv'):
+        return True
+
+    return False
+
+
 # This only runs once when package is first imported.
-if not os.environ.get('CI'):
-    # Skip license check in CI envs (e.g., GitHub Actions)
+if not _should_skip_license():
     _check_license_agreement()
