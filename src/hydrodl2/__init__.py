@@ -71,7 +71,13 @@ def _check_license_agreement():
 
         print("-" * 40)
 
-        response = input("Do you agree to these terms? Type 'Yes' to continue: ")
+        try:
+            response = input("Do you agree to these terms? Type 'Yes' to continue: ")
+        except EOFError:
+            # If we get here, it means we're in an environment that can't take
+            # input -- default to no agreement.
+            print("\n[!] No terminal detected. Skipping license prompt.")
+            return
 
         if response.strip().lower() in ['yes', 'y']:
             try:
