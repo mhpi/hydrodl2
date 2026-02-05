@@ -619,8 +619,11 @@ class Hbv_2(torch.nn.Module):
 
         else:
             # No routing, only output the average of all model sims.
+            Qsim = Qsimavg
             Qs = torch.unsqueeze(Qsimavg, -1)
-            Q0_rout = Q1_rout = Q2_rout = None
+            Q0_rout = Q0_sim.mean(-1, keepdim=True)
+            Q1_rout = Q1_sim.mean(-1, keepdim=True)
+            Q2_rout = Q2_sim.mean(-1, keepdim=True)
 
         states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
 
