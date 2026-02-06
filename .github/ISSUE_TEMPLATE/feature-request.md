@@ -1,6 +1,6 @@
 ---
 name: 🛠️ Enhancement/Feature Request
-about: Suggest something an improvement a New Feature to add
+about: Suggest an improvement or new feature
 labels: feature_request
 assignees: leoglonz
 ---

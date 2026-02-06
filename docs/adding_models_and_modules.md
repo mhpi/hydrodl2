@@ -1,13 +1,40 @@
 # Adding Models and Modules to *HydroDL2*
 
-We illustrate this with a hydrology model HBV 1.2.
+This guide covers how to add new models and modules to the HydroDL2 library so they are automatically discoverable via `load_model()` and `available_models()`.
 
-- In the `models/` directory, create a folder for the model type if it does not already exist, using only lowercase.
-  - e.g., we should create `models/hbv/`, or confirm it exists.
+## Adding a Model
 
-- Within `models/<your_model>/`, create a `.py` file for the model taking the name that will be exposed to users, converting to lowercase.
-  - e.g., HBV 1.2 goes to `hbv_1_2.py`.
+We illustrate this with a hydrology model HBV 1.2 as an example.
 
-- The model file should only contain one model class. If you want to place multiple variants of your model in the same file, make sure to add a variant specification to your config and indicate
-with the `ver_name` flag when loading your model with `load_model()`. Otherwise, the first model listed in your file will be loaded by default.
-  - Unless changes between model variants are small, it is encouraged to use a different file for each.
+1. **Create a model directory** (if it does not already exist) in `src/hydrodl2/models/`, using only lowercase:
+
+   ```text
+   src/hydrodl2/models/hbv/       # confirm it exists, or create it
+   ```
+
+2. **Create a model file** within your model directory. The filename should match the name exposed to users, converted to lowercase with underscores:
+
+   ```text
+   src/hydrodl2/models/hbv/hbv_1_2.py
+   ```
+
+3. **Define one model class per file.** The class should be a `torch.nn.Module` subclass. Users will load it with:
+
+   ```python
+   Hbv12 = hydrodl2.load_model('hbv_1_2')
+   ```
+
+4. **Multiple variants in one file** (discouraged unless differences are small): if you place multiple classes in a single file, users must specify which to load using the `ver_name` parameter. Otherwise, the first class in the file is loaded by default:
+
+   ```python
+   Hbv12Beta = hydrodl2.load_model('hbv_1_2', ver_name='Hbv12Beta')
+   ```
+
+## Adding a Module
+
+Modules (e.g., data assimilation components) follow the same directory convention under `src/hydrodl2/modules/`:
+
+1. Create a subdirectory for the module category in `src/hydrodl2/modules/` (lowercase).
+2. Add a `.py` file containing the module class.
+
+Modules are listed via `available_modules()`.

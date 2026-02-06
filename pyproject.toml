@@ -1,8 +1,6 @@
 [build-system]
 build-backend = "hatchling.build"
 requires = ["hatchling", "hatch-vcs"]
-# requires = ["setuptools>=42", "wheel"]
-# build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydrodl2"
@@ -20,16 +18,30 @@ maintainers = [
 ]
 requires-python = ">=3.9.0"
 dynamic = ["version"]
+keywords = [
+    "differentiable-modeling",
+    "pytorch",
+    "hydrology",
+    "physics-informed",
+    "deep-learning",
+    "hybrid-modeling",
+    "scientific-computing",
+]
 dependencies = [
     "numpy",
+    "platformdirs",
     "sourcedefender",
     "torch",
-    "uv",
 ]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "License :: Free for non-commercial use",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Hydrology",
 ]
 
 [project.optional-dependencies]
@@ -43,16 +55,33 @@ dev = [
 [project.urls]
 Homepage = "https://mhpi.github.io/benchmarks/"
 Repository = "https://github.com/mhpi/hydrodl2"
+Documentation = "https://github.com/mhpi/hydrodl2/tree/master/docs"
+Issues = "https://github.com/mhpi/hydrodl2/issues"
+Changelog = "https://github.com/mhpi/hydrodl2/blob/master/docs/CHANGELOG.md"
 
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/hydrodl2/_version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/hydrodl2", "tests"]
+packages = ["src/hydrodl2"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_*"
+test-command = "python -c 'import hydrodl2; print(hydrodl2.__version__)'"
+test-extras = ["dev"]
+build-verbosity = 1
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -129,3 +158,7 @@ convention = "numpy"
 [tool.ruff.format]
 quote-style = "preserve"
 docstring-code-format = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["hydrodl2"]
+combine-as-imports = true
