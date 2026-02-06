@@ -32,6 +32,7 @@ dependencies = [
     "platformdirs",
     "sourcedefender",
     "torch",
+    "tqdm",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -68,20 +69,6 @@ packages = ["src/hydrodl2"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.cibuildwheel]
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
-skip = "*-win32 *-manylinux_i686 *-musllinux_*"
-test-command = "python -c 'import hydrodl2; print(hydrodl2.__version__)'"
-test-extras = ["dev"]
-build-verbosity = 1
-
-[tool.cibuildwheel.macos]
-archs = ["x86_64", "arm64"]
-
-[tool.cibuildwheel.linux]
-manylinux-x86_64-image = "manylinux2014"
-manylinux-aarch64-image = "manylinux2014"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

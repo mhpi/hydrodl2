@@ -1,4 +1,4 @@
-name: Build and Publish Wheels
+name: Build and Publish
 
 on:
   release:
@@ -6,56 +6,13 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-13, macos-14]  # macos-13=Intel, macos-14=ARM
-
-    steps:
-      - uses: actions/checkout@v6.0.2
-        with:
-          fetch-depth: 0  # Full history for version tags (hatch-vcs needs this)
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.1
-        env:
-          # Build for Python 3.9-3.13
-          CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-*
-
-          # Skip 32-bit builds and musllinux
-          CIBW_SKIP: '*-win32 *-manylinux_i686 *-musllinux_*'
-
-          # Test command to verify the wheel works
-          CIBW_TEST_COMMAND: "python -c 'import hydrodl2; print(hydrodl2.__version__)'"
-
-          # Install test dependencies
-          CIBW_TEST_EXTRAS: 'dev'
-
-          # Build settings
-          CIBW_BUILD_VERBOSITY: 1
-
-          # For macOS ARM builds
-          CIBW_ARCHS_MACOS: 'x86_64 arm64'
-
-          # Use manylinux2014 for better compatibility
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
-
-      - uses: actions/upload-artifact@v6.0.0
-        with:
-          name: wheels-${{ matrix.os }}
-          path: ./wheelhouse/*.whl
-          if-no-files-found: error
-
-  build_sdist:
-    name: Build source distribution
+  build:
+    name: Build wheel and sdist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          fetch-depth: 0  # Full history for version tags
+          fetch-depth: 0  # Full history for version tags (hatch-vcs needs this)
 
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
@@ -65,18 +22,23 @@ jobs:
       - name: Install build
         run: pip install build
 
-      - name: Build sdist
-        run: python -m build --sdist
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Verify wheel
+        run: |
+          pip install dist/*.whl
+          python -c 'import hydrodl2; print(hydrodl2.__version__)'
 
       - uses: actions/upload-artifact@v6.0.0
         with:
-          name: sdist
-          path: dist/*.tar.gz
+          name: dist
+          path: dist/
           if-no-files-found: error
 
   publish:
     name: Publish to PyPI
-    needs: [build_wheels, build_sdist]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # Required for trusted publishing
@@ -84,13 +46,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7.0.0
         with:
-          pattern: wheels-*
-          path: dist
-          merge-multiple: true
-
-      - uses: actions/download-artifact@v7.0.0
-        with:
-          name: sdist
+          name: dist
           path: dist
 
       - name: Display artifacts
