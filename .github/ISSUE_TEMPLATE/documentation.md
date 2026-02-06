@@ -1,6 +1,6 @@
 ---
 name: 📖 Documentation Issue/Suggestion
-about: Report parts probems with the docs or suggest improvments
+about: Report problems with the docs or suggest improvements
 labels: documentation
 assignees: leoglonz
 ---

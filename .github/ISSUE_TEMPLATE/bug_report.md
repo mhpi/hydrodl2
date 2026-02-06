@@ -22,7 +22,7 @@ Is this a known issue?
 
 ### Expected Behavior
 
-<!-- What was the expected behavior in this senario? This will help us identify the source the issue.
+<!-- What was the expected behavior in this scenario? This will help us identify the source of the issue.
 -->
 
 ## Steps to Reproduce
