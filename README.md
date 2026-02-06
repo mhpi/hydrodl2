@@ -1,14 +1,18 @@
-# HydroDL2: Differentiable Hydrologic Models
+<!-- <p align="center">
+  <img src="docs/images/hydrodl2.png" alt="HydroDL2 logo" width="300" height="300">
+</p> -->
 
-<!-- <img src="docs/images/hydrodl2.png" alt="HydroDL2" width="500" height="500"> -->
+<h1 align="center">HydroDL2: Differentiable Hydrologic Models</h1>
 
-[![Python](https://img.shields.io/badge/python-3.9--3.13-blue?labelColor=333333)](https://www.python.org/downloads/)
-[![PyPI version](https://img.shields.io/pypi/v/hydrodl2?logo=pypi&logoColor=white&labelColor=333333)](https://pypi.org/project/hydrodl2/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-required-EE4C2C?logo=pytorch&logoColor=white&labelColor=333333)](https://pytorch.org/)
-
-[![Build](https://img.shields.io/github/actions/workflow/status/mhpi/hydrodl2/pytest.yaml?branch=master&logo=github&label=tests&labelColor=333333)](https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&labelColor=333333)](https://github.com/astral-sh/ruff)
-[![License](https://img.shields.io/badge/license-Non--Commercial_(PSU)-yellow?labelColor=333333)](#license)
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9--3.13-blue?labelColor=333333" alt="Python"></a>
+  <a href="https://pypi.org/project/hydrodl2/"><img src="https://img.shields.io/pypi/v/hydrodl2?logo=pypi&logoColor=white&labelColor=333333&cacheSeconds=60" alt="PyPI"></a>
+  <a href="https://pypi.org/project/torch/"><img src="https://img.shields.io/badge/dynamic/json?label=PyTorch&query=info.version&url=https%3A%2F%2Fpypi.org%2Fpypi%2Ftorch%2Fjson&logo=pytorch&color=EE4C2C&logoColor=F900FF&labelColor=333333" alt="PyTorch"></a>
+  </br>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&labelColor=333333" alt="Ruff"></a>
+  <a href="https://github.com/mhpi/hydrodl2/actions/workflows/pytest.yaml"><img src="https://img.shields.io/github/actions/workflow/status/mhpi/hydrodl2/pytest.yaml?branch=master&logo=github&label=tests&labelColor=333333" alt="Build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Non--Commercial_(PSU)-yellow?labelColor=333333" alt="License"></a>
+</p>
 
 ---
 
