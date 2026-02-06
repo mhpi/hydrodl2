@@ -1,0 +1,44 @@
+name: Test Wheel Build
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'pyproject.toml'
+      - '.github/workflows/build-wheels.yaml'
+      - '.github/workflows/test-wheels.yaml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'pyproject.toml'
+      - '.github/workflows/build-wheels.yaml'
+      - '.github/workflows/test-wheels.yaml'
+  workflow_dispatch:
+
+jobs:
+  test_build_wheels:
+    name: Test build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.3.1
+        env:
+          CIBW_BUILD: cp312-*  # Only test one Python version to save time
+          CIBW_SKIP: '*-win32 *-manylinux_i686 *-musllinux_*'
+          CIBW_TEST_COMMAND: "python -c 'import dmg; print(dmg.__version__)'"
+          CIBW_TEST_EXTRAS: 'dev'
+          CIBW_BUILD_VERBOSITY: 1
+
+      - uses: actions/upload-artifact@v6.0.0
+        with:
+          name: test-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+          retention-days: 7
