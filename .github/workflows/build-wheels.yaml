@@ -27,8 +27,8 @@ jobs:
 
       - name: Verify wheel
         run: |
-          pip install dist/*.whl
-          python -c 'import hydrodl2; print(hydrodl2.__version__)'
+          pip install --find-links dist hydrodl2
+          python -c "import hydrodl2; print(hydrodl2.__version__)"
 
       - uses: actions/upload-artifact@v6.0.0
         with:
