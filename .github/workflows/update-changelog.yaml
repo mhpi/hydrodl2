@@ -1,0 +1,49 @@
+name: Update Changelog
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: Update CHANGELOG.md
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          # Strip leading 'v' from tag for version number
+          VERSION="${RELEASE_TAG#v}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Build the new version section
+          NEW_SECTION="## [Unreleased]\n\n## [${VERSION}] - ${DATE}\n\n${RELEASE_BODY}"
+
+          # Replace '## [Unreleased]' with the new section
+          # Using awk for reliable multiline replacement
+          awk -v section="$NEW_SECTION" '{
+            if ($0 == "## [Unreleased]") {
+              print section
+            } else {
+              print
+            }
+          }' docs/CHANGELOG.md > docs/CHANGELOG.tmp && mv docs/CHANGELOG.tmp docs/CHANGELOG.md
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/CHANGELOG.md
+          git diff --cached --quiet && exit 0
+          git commit -m "docs: update CHANGELOG.md for ${RELEASE_TAG}"
+          git push
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
