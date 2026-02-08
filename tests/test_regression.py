@@ -34,7 +34,6 @@ EXP_SNAPSHOTS = {
         'output_key': 'streamflow',
         'mean': [
             0.02233361080288887,  # Local machine
-            0.02233361080288887,  # GitHub Actions runner
         ],
         'std': [
             0.045270565897226334,
