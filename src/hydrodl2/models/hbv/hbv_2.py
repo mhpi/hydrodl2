@@ -20,10 +20,11 @@ class Hbv_2(torch.nn.Module):
 
     Publication
     -----------
-    -   Yalan Song, Tadd Bindas, Chaopeng Shen, et al. "High-resolution
-        national-scale water modeling is enhanced by multiscale differentiable
-        physics-informed machine learning." Water Resources Research (2025).
-        https://doi.org/10.1029/2024WR038928.
+    -   Song, Y., Bindas, T., Shen, C., Ji, H., Knoben, W. J. M., Lonzarich, L.,
+        et al. (2025). High-resolution national-scale water modeling is enhanced
+        by multiscale differentiable physics-informed machine learning. Water
+        Resources Research, 61, e2024WR038928.
+        https://doi.org/10.1029/2024WR038928
 
     Parameters
     ----------

@@ -8,17 +8,23 @@ from hydrodl2.models.hbv.hbv_2_hourly import Hbv_2_hourly
 
 
 class Hbv_2_mts(torch.nn.Module):
-    """HBV 2.0, multi timescale, distributed UH.
+    """Multi-Timescale (MTS) HBV 2.0.
 
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
     runoff simulation on unit basins.
 
     Authors
     -------
-    -   Wencong Yang
+    -   Wencong Yang, Leo Lonzarich
     -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
     -   (HBV-light Version 2) Seibert, 2005
         (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
+
+    Publication
+    -----------
+    -   Yang, W., Ji, H., Lonzarich, L., Song, Y., Shen, C. (2025). Diffusion-Based
+        Probabilistic Modeling for Hourly Streamflow Prediction and Assimilation.
+        arXiv. https://arxiv.org/abs/2510.08488 **[Under Review]**
 
     Parameters
     ----------

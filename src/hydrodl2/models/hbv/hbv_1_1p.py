@@ -6,7 +6,8 @@ from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
 
 
 class Hbv_1_1p(torch.nn.Module):
-    """HBV 1.1p ~
+    """HBV 1.1p.
+
     Multi-component, differentiable Pytorch HBV model with a capillary rise
     modification and option to run without internal state warmup.
 
@@ -19,10 +20,10 @@ class Hbv_1_1p(torch.nn.Module):
 
     Publication
     -----------
-    -   Yalan Song, Kamlesh Sawadekar, Jonathan Frame, et al. "Physics-informed,
-        Differentiable Hydrologic  Models for Capturing Unseen Extreme Events."
-        ESS Open Archive (2025).
-        https://doi.org/10.22541/essoar.172304428.82707157/v2.
+    -   Yalan Song, Kamlesh Sawadekar, Jonathan M Frame, et al. Physics-informed,
+        Differentiable Hydrologic  Models for Capturing Unseen Extreme Events.
+        ESS Open Archive. March 14, 2025.
+        https://doi.org/10.22541/essoar.172304428.82707157/v2 **[Accepted]**
 
     Parameters
     ----------

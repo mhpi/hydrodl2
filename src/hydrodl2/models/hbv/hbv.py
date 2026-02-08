@@ -6,7 +6,7 @@ from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
 
 
 class Hbv(torch.nn.Module):
-    """HBV 1.0 ~.
+    """HBV 1.0.
 
     Multi-component, differentiable PyTorch HBV model with option to run without
     internal state warmup.
@@ -20,11 +20,10 @@ class Hbv(torch.nn.Module):
 
     Publication
     -----------
-    -   Dapeng Feng, Jiangtao Liu, Kathryn Lawson, Chaopeng Shen. "Differentiable,
-        learnable, regionalized process-based models with multiphysical outputs
-        can approach state-of-the-art hydrologic prediction accuracy." Water
-        Resources Research (2020), 58, e2022WR032404.
-        https://doi.org/10.1029/2022WR032404.
+    -   Feng, D., Liu, J., Lawson, K., & Shen, C. (2022). Differentiable, learnable,
+        regionalized process-based models with multiphysical outputs can approach
+        state-of-the-art hydrologic prediction accuracy. Water Resources Research,
+        58, e2022WR032404. https://doi.org/10.1029/2022WR032404
 
     Parameters
     ----------

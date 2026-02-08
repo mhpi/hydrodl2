@@ -18,6 +18,12 @@ class Hbv_2_hourly(torch.nn.Module):
     -   (HBV-light Version 2) Seibert, 2005
         (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
 
+    Publication
+    -----------
+    -   Yang, W., Ji, H., Lonzarich, L., Song, Y., Shen, C. (2025). Diffusion-Based
+        Probabilistic Modeling for Hourly Streamflow Prediction and Assimilation.
+        arXiv. https://arxiv.org/abs/2510.08488 **[Under Review]**
+
     Parameters
     ----------
     config
