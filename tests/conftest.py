@@ -5,15 +5,15 @@ import torch
 
 from hydrodl2 import load_model
 from tests import (
-    SEED,
     DEVICE,
-    _hbv_config_dict,
+    SEED,
     _hbv_1_1p_config_dict,
     _hbv_2_config_dict,
     _hbv_2_hourly_config_dict,
-    make_hbv_inputs,
-    make_hbv2_inputs,
+    _hbv_config_dict,
     make_hbv2_hourly_inputs,
+    make_hbv2_inputs,
+    make_hbv_inputs,
 )
 
 

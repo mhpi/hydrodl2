@@ -13,7 +13,7 @@ import pytest
 import torch
 
 from hydrodl2 import load_model
-from tests import SEED, NSTEPS, NGRID, DEVICE
+from tests import DEVICE, NGRID, NSTEPS, SEED
 
 
 class TestPhysicalConstraints:

@@ -13,7 +13,7 @@ via the model_setup and simple_model_setup fixtures.
 
 import torch
 
-from tests import NSTEPS, NGRID
+from tests import NGRID, NSTEPS
 
 
 class TestForwardPass:

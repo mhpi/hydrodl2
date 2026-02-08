@@ -16,13 +16,7 @@ import pytest
 import torch
 
 from hydrodl2 import load_model
-from tests import (
-    DEVICE,
-    _hbv_config_dict,
-    _hbv_1_1p_config_dict,
-    _hbv_2_config_dict,
-)
-
+from tests import DEVICE, _hbv_1_1p_config_dict, _hbv_2_config_dict, _hbv_config_dict
 
 # ---------------------------------------------------------------------------- #
 #  Expected learnable parameter counts

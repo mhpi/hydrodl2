@@ -18,12 +18,11 @@ import pytest
 
 from tests import (
     _assert_close_to_any,
-    _create_hbv_deterministic,
-    _create_hbv_1_1p_deterministic,
     _create_hbv2_deterministic,
     _create_hbv2_hourly_deterministic,
+    _create_hbv_1_1p_deterministic,
+    _create_hbv_deterministic,
 )
-
 
 # ---------------------------------------------------------------------------- #
 #  Expected regression statistics

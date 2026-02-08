@@ -15,14 +15,7 @@ import pytest
 import torch
 
 from hydrodl2 import load_model
-from tests import (
-    SEED,
-    NSTEPS,
-    NGRID,
-    DEVICE,
-    _hbv_config_dict,
-    make_hbv_inputs,
-)
+from tests import DEVICE, NGRID, NSTEPS, SEED, _hbv_config_dict, make_hbv_inputs
 
 
 class TestStateManagement:
