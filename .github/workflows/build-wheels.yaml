@@ -10,12 +10,12 @@ jobs:
     name: Build wheel and sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Full history for version tags (hatch-vcs needs this)
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -30,7 +30,7 @@ jobs:
           pip install --find-links dist hydrodl2
           python -c "import hydrodl2; print(hydrodl2.__version__)"
 
-      - uses: actions/upload-artifact@v6.0.0
+      - uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
@@ -44,7 +44,7 @@ jobs:
       id-token: write  # Required for trusted publishing
 
     steps:
-      - uses: actions/download-artifact@v7.0.0
+      - uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist
@@ -53,4 +53,4 @@ jobs:
         run: ls -lh dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1

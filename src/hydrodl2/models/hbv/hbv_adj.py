@@ -13,21 +13,25 @@ from hydrodl2.core.calc.batch_jacobian import batchJacobian
 
 
 class HbvAdj(torch.nn.Module):
-    """
+    """HBV Adjoint.
+
     Multi-component PyTorch HBV model using implicit numerical scheme and
     gradient tracking supported by adjoint method.
 
-    Author
-    ------
-    Yalan Song
+    Authors
+    -------
+    -   Yalan Song
+    -   (Original NumPy HBV ver.) Beck et al., 2020 (http://www.gloh2o.org/hbv/).
+    -   (HBV-light Version 2) Seibert, 2005
+        (https://www.geo.uzh.ch/dam/jcr:c8afa73c-ac90-478e-a8c7-929eed7b1b62/HBV_manual_2005.pdf).
 
     Publication
     -----------
-    -   Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K. E., & Shen,
-        C. (2024). When ancient numerical demons meet physics-informed machine
-        learning: Adjoint-based gradients for implicit differentiable modeling.
-        Hydrology and Earth System Sciences Discussions, 1-35.
-        https://doi.org/10.5194/hess-2023-258
+    -   Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K., Sawadekar,
+        K., and Shen, C.: When ancient numerical demons meet physics-informed machine
+        learning: adjoint-based gradients for implicit differentiable modeling,
+        Hydrol. Earth Syst. Sci., 28, 3051-3077,
+        https://doi.org/10.5194/hess-28-3051-2024, 2024.
 
     Parameters
     ----------
