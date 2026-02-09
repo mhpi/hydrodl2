@@ -1,6 +1,6 @@
 <h1 align="center">HydroDL2: Differentiable Hydrologic Models</h1>
 
-<!-- <p align="center"><img src="docs/images/hydrodl2.png" alt="HydroDL2" width="500" height="500"></p> -->
+<p align="center"><img src="docs/images/hydrodl2.png" alt="HydroDL2" width="500" height="500"></p>
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9--3.13-blue?labelColor=333333" alt="Python"></a>
@@ -113,7 +113,7 @@ This work is maintained by [MHPI](http://water.engr.psu.edu/shen/) and advised b
 
 Models:
 
-- **(HBV)**  Feng, D., Liu, J., Lawson, K., & Shen, C. (2022). Differentiable, learnable, regionalized process-based models with multiphysical outputs can approach state-of-the-art hydrologic prediction accuracy. Water Resources Research, 58, e2022WR032404. <https://doi.org/10.1029/2022WR032404>
+1. **(HBV)**  Feng, D., Liu, J., Lawson, K., & Shen, C. (2022). Differentiable, learnable, regionalized process-based models with multiphysical outputs can approach state-of-the-art hydrologic prediction accuracy. Water Resources Research, 58, e2022WR032404. <https://doi.org/10.1029/2022WR032404>
 
     <details>
     <summary>BibTeX</summary>
@@ -136,7 +136,7 @@ Models:
 
 </br>
 
-- **(HBV Adj.)** Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K., Sawadekar, K., and Shen, C.: When ancient numerical demons meet physics-informed machine learning: adjoint-based gradients for implicit differentiable modeling, Hydrol. Earth Syst. Sci., 28, 3051–3077, <https://doi.org/10.5194/hess-28-3051-2024>, 2024.
+2. **(HBV Adj.)** Song, Y., Knoben, W. J. M., Clark, M. P., Feng, D., Lawson, K., Sawadekar, K., and Shen, C.: When ancient numerical demons meet physics-informed machine learning: adjoint-based gradients for implicit differentiable modeling, Hydrol. Earth Syst. Sci., 28, 3051–3077, <https://doi.org/10.5194/hess-28-3051-2024>, 2024.
 
     <details>
     <summary>BibTeX</summary>
@@ -160,7 +160,7 @@ Models:
 
 </br>
 
-- **(HBV 1.1p)** Yalan Song, Kamlesh Sawadekar, Jonathan M Frame, et al. Physics-informed, Differentiable Hydrologic  Models for Capturing Unseen Extreme Events  . ESS Open Archive . March 14, 2025. <https://doi.org/10.22541/essoar.172304428.82707157/v2> **[Accepted]**
+3. **(HBV 1.1p)** Yalan Song, Kamlesh Sawadekar, Jonathan M Frame, et al. Physics-informed, Differentiable Hydrologic  Models for Capturing Unseen Extreme Events  . ESS Open Archive . March 14, 2025. <https://doi.org/10.22541/essoar.172304428.82707157/v2> **[Accepted]**
 
     <details>
     <summary>BibTeX</summary>
@@ -182,7 +182,7 @@ Models:
 
 </br>
 
-- **(HBV 2.0)** Song, Y., Bindas, T., Shen, C., Ji, H., Knoben, W. J. M., Lonzarich, L., et al. (2025). High-resolution national-scale water modeling is enhanced by multiscale differentiable physics-informed machine learning. Water Resources Research, 61, e2024WR038928. <https://doi.org/10.1029/2024WR038928>
+4. **(HBV 2.0)** Song, Y., Bindas, T., Shen, C., Ji, H., Knoben, W. J. M., Lonzarich, L., et al. (2025). High-resolution national-scale water modeling is enhanced by multiscale differentiable physics-informed machine learning. Water Resources Research, 61, e2024WR038928. <https://doi.org/10.1029/2024WR038928>
 
     <details>
     <summary>BibTeX</summary>
@@ -205,7 +205,7 @@ Models:
 
 </br>
 
-- **(HBV 2.0 MTS)** Yang, W., Ji, H., Lonzarich, L., Song, Y., Shen, C. (2025). Diffusion-Based Probabilistic Modeling for Hourly Streamflow Prediction and Assimilation. arXiv. <https://arxiv.org/abs/2510.08488> **[Under Review]**
+5. **(HBV 2.0 MTS)** Yang, W., Ji, H., Lonzarich, L., Song, Y., Shen, C. (2025). Diffusion-Based Probabilistic Modeling for Hourly Streamflow Prediction and Assimilation. arXiv. <https://arxiv.org/abs/2510.08488> **[Under Review]**
 
     <details>
     <summary>BibTeX</summary>
