@@ -42,10 +42,10 @@ class Hbv_1_1p(torch.nn.Module):
         self.name = 'HBV 1.1p'
         self.config = config
         self.initialize = False
-        self.warm_up = 0
+        self.warm_up = 0 # 365 # revise from 0
         self.pred_cutoff = 0
         self.warm_up_states = True
-        self.dynamic_params = []
+        self.dynamic_params = [] # [1, 3, 13] # revise from []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
         self.routing = True
@@ -55,7 +55,12 @@ class Hbv_1_1p(torch.nn.Module):
         self.cache_states = False
         self.device = device
 
+        # self.states, self._states_cache = None, None
+        # zhennan revised
         self.states, self._states_cache = None, None
+        self.routing_len = 15
+        self.routing_state = None
+        self._routing_state_cache = None
 
         self.state_names = [
             'SNOWPACK',  # Snowpack storage
@@ -166,6 +171,36 @@ class Hbv_1_1p(torch.nn.Module):
         self.states = tuple(
             s.detach().to(self.device, dtype=torch.float32) for s in states
         )
+    
+    # zhennan added get states for routing states specifically
+    def get_routing_state(self) -> Optional[dict[str, torch.Tensor]]:
+        """Return cached routing carryover needed for restart."""
+        return self._routing_state_cache
+    
+    # zhennan added load states for routing states specifically
+    def load_routing_state(
+        self,
+        routing_state: Optional[dict[str, torch.Tensor]],
+    ) -> None:
+        """Load routing carryover for restart."""
+        if routing_state is None:
+            self.routing_state = None
+            return
+
+        if not isinstance(routing_state, dict):
+            raise ValueError("`routing_state` must be a dict or None.")
+
+        required = ("Qsim_tail", "Q0_tail", "Q1_tail", "Q2_tail")
+        for key in required:
+            if key not in routing_state:
+                raise ValueError(f"Missing routing state key: {key}")
+            if not isinstance(routing_state[key], torch.Tensor):
+                raise ValueError(f"Routing state `{key}` must be a tensor.")
+
+        self.routing_state = {
+            key: routing_state[key].detach().to(self.device, dtype=torch.float32)
+            for key in required
+        }
 
     def _set_parameters(self) -> None:
         """Get physical parameters."""
@@ -353,10 +388,16 @@ class Hbv_1_1p(torch.nn.Module):
         fluxes, states = self._PBM(x[warm_up:, :, :], current_states, phy_params_dict)
 
         # State caching
-        self._states_cache = [s.detach() for s in states]
+        # self._states_cache = [s.detach() for s in states]
+        # zhennan change it to a tuple of tensors
+        self._states_cache = tuple(s.detach() for s in states)
 
+        # if self.cache_states:
+        #     self.states = self._states_cache
+        # zhennan revised to add routing state saved
         if self.cache_states:
             self.states = self._states_cache
+            self.routing_state = self._routing_state_cache
 
         return fluxes
 
@@ -522,8 +563,52 @@ class Hbv_1_1p(torch.nn.Module):
         else:
             Qsimavg = (Qsimmu * self.muwts).sum(-1)
 
-        # Run routing
+#         # Run routing
+#         if self.routing:
+#             # Routing for all components or just the average.
+#             if self.comprout:
+#                 # All components; reshape to [time, gages * num models]
+#                 Qsim = Qsimmu.view(nsteps, ngrid * self.nmul)
+#             else:
+#                 # Average, then do routing.
+#                 Qsim = Qsimavg
+
+#             UH = uh_gamma(
+#                 self.routing_param_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
+#                 self.routing_param_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
+#                 lenF=15,
+#             )
+#             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
+#             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
+#             Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
+
+#             # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
+#             rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+#             Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
+#             rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+#             Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
+#             rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+#             Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+
+#             if self.comprout:
+#                 # Qs is now shape [time, [gages*num models], vars]
+#                 Qstemp = Qsrout.view(nsteps, ngrid, self.nmul)
+#                 if self.muwts is None:
+#                     Qs = Qstemp.mean(-1, keepdim=True)
+#                 else:
+#                     Qs = (Qstemp * self.muwts).sum(-1, keepdim=True)
+#             else:
+#                 Qs = Qsrout
+
+#         else:
+#             # No routing, only output the average of all model sims.
+#             Qs = torch.unsqueeze(Qsimavg, -1)
+#             Q0_rout = Q1_rout = Q2_rout = None
+        
+        # Run routing, zhennan revised to add logic to save the routing info to states as well
         if self.routing:
+            tail_len = self.routing_len - 1
+
             # Routing for all components or just the average.
             if self.comprout:
                 # All components; reshape to [time, gages * num models]
@@ -532,25 +617,52 @@ class Hbv_1_1p(torch.nn.Module):
                 # Average, then do routing.
                 Qsim = Qsimavg
 
-            UH = uh_gamma(
-                self.routing_param_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
-                self.routing_param_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
-                lenF=15,
-            )
-            rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
-            UH = UH.permute([1, 2, 0])  # [gages,vars,time]
-            Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
+            # Prepare unrouted component series used for routing restart
+            Q0_base = Q0_sim.mean(-1)  # [time, gages]
+            Q1_base = Q1_sim.mean(-1)  # [time, gages]
+            Q2_base = Q2_sim.mean(-1)  # [time, gages]
 
-            # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
-            rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
-            rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
-            rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+            # Prepend saved routing carryover if present
+            if self.routing_state is not None:
+                Qsim_in = torch.cat([self.routing_state["Qsim_tail"], Qsim], dim=0)
+                Q0_in = torch.cat([self.routing_state["Q0_tail"], Q0_base], dim=0)
+                Q1_in = torch.cat([self.routing_state["Q1_tail"], Q1_base], dim=0)
+                Q2_in = torch.cat([self.routing_state["Q2_tail"], Q2_base], dim=0)
+            else:
+                Qsim_in = Qsim
+                Q0_in = Q0_base
+                Q1_in = Q1_base
+                Q2_in = Q2_base
+
+            nsteps_route = Qsim_in.shape[0]
+
+            UH = uh_gamma(
+                self.routing_param_dict['route_a'].repeat(nsteps_route, 1).unsqueeze(-1),
+                self.routing_param_dict['route_b'].repeat(nsteps_route, 1).unsqueeze(-1),
+                lenF=self.routing_len,
+            )
+
+            # Routed total flow
+            rf = torch.unsqueeze(Qsim_in, -1).permute([1, 2, 0])  # [gages, vars, time]
+            UH_use = UH.permute([1, 2, 0])  # [gages, vars, time]
+            Qsrout_full = uh_conv(rf, UH_use).permute([2, 0, 1])
+            Qsrout = Qsrout_full[-nsteps:, :, :]
+
+            # Routed Q0, Q1, Q2
+            rf_Q0 = torch.unsqueeze(Q0_in, -1).permute([1, 2, 0])
+            Q0_rout_full = uh_conv(rf_Q0, UH_use).permute([2, 0, 1])
+            Q0_rout = Q0_rout_full[-nsteps:, :, :]
+
+            rf_Q1 = torch.unsqueeze(Q1_in, -1).permute([1, 2, 0])
+            Q1_rout_full = uh_conv(rf_Q1, UH_use).permute([2, 0, 1])
+            Q1_rout = Q1_rout_full[-nsteps:, :, :]
+
+            rf_Q2 = torch.unsqueeze(Q2_in, -1).permute([1, 2, 0])
+            Q2_rout_full = uh_conv(rf_Q2, UH_use).permute([2, 0, 1])
+            Q2_rout = Q2_rout_full[-nsteps:, :, :]
 
             if self.comprout:
-                # Qs is now shape [time, [gages*num models], vars]
+                # Qs is now shape [time, gages, 1] after averaging models
                 Qstemp = Qsrout.view(nsteps, ngrid, self.nmul)
                 if self.muwts is None:
                     Qs = Qstemp.mean(-1, keepdim=True)
@@ -559,11 +671,25 @@ class Hbv_1_1p(torch.nn.Module):
             else:
                 Qs = Qsrout
 
+            # Cache routing carryover for restart
+            if tail_len > 0:
+                self._routing_state_cache = {
+                    "Qsim_tail": Qsim_in[-tail_len:].detach(),
+                    "Q0_tail": Q0_in[-tail_len:].detach(),
+                    "Q1_tail": Q1_in[-tail_len:].detach(),
+                    "Q2_tail": Q2_in[-tail_len:].detach(),
+                }
+            else:
+                self._routing_state_cache = None
+
         else:
             # No routing, only output the average of all model sims.
             Qs = torch.unsqueeze(Qsimavg, -1)
             Q0_rout = Q1_rout = Q2_rout = None
-
+            self._routing_state_cache = None
+    
+        
+        
         states = (SNOWPACK, MELTWATER, SM, SUZ, SLZ)
 
         if self.initialize:
