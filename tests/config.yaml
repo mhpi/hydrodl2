@@ -11,7 +11,7 @@ device: cuda
 gpu_id: 7
 
 name: dmg-1.0-${observations.name}
-save_path: /data/lgl5139/project_blue_eyes/generic_diffModel/runs 
+save_path: /data/lgl5139/project_blue_eyes/generic_diffModel/runs
 
 
 ## Training -------------------------------#
@@ -40,10 +40,10 @@ dpl_model:
     nearzero: 1e-5
     rho: 365
     dy_drop: 0.0
-    
+
 phy_model:
     models: [HBV]  # HBV, hbv_11p (1.1p), PRMS, SACSMA_with_snow
-    warm_up: 365
+    warmup: 365
     stat_param_idx: -1
     dynamic_params:
         HBV: [parBETA, parBETAET]

@@ -24,16 +24,16 @@ def _hbv_config_dict(
     dynamic_params=None,
     nmul=1,
     routing=True,
-    warm_up=0,
-    warm_up_states=True,
+    warmup=0,
+    warmup_states=True,
     cache_states=False,
 ):
     """Config dict for Hbv with 1 dynamic parameter."""
     if dynamic_params is None:
         dynamic_params = ['parBETA']
     return {
-        'warm_up': warm_up,
-        'warm_up_states': warm_up_states,
+        'warmup': warmup,
+        'warmup_states': warmup_states,
         'dy_drop': 0.0,
         'dynamic_params': {'Hbv': dynamic_params},
         'variables': ['prcp', 'tmean', 'pet'],
@@ -49,16 +49,16 @@ def _hbv_1_1p_config_dict(
     dynamic_params=None,
     nmul=1,
     routing=True,
-    warm_up=0,
-    warm_up_states=True,
+    warmup=0,
+    warmup_states=True,
     cache_states=False,
 ):
     """Config dict for Hbv_1_1p with 2 dynamic parameters."""
     if dynamic_params is None:
         dynamic_params = ['parBETA', 'parBETAET']
     return {
-        'warm_up': warm_up,
-        'warm_up_states': warm_up_states,
+        'warmup': warmup,
+        'warmup_states': warmup_states,
         'dy_drop': 0.0,
         'dynamic_params': {'Hbv_1_1p': dynamic_params},
         'variables': ['prcp', 'tmean', 'pet'],
@@ -74,16 +74,16 @@ def _hbv_2_config_dict(
     dynamic_params=None,
     nmul=1,
     routing=False,
-    warm_up=0,
-    warm_up_states=True,
+    warmup=0,
+    warmup_states=True,
     cache_states=False,
 ):
     """Config dict for Hbv_2 with 3 dynamic parameters."""
     if dynamic_params is None:
         dynamic_params = ['parBETA', 'parK0', 'parBETAET']
     return {
-        'warm_up': warm_up,
-        'warm_up_states': warm_up_states,
+        'warmup': warmup,
+        'warmup_states': warmup_states,
         'dy_drop': 0.0,
         'dynamic_params': {'Hbv_2': dynamic_params},
         'variables': ['prcp', 'tmean', 'pet'],
@@ -99,16 +99,16 @@ def _hbv_2_hourly_config_dict(
     dynamic_params=None,
     nmul=1,
     routing=False,
-    warm_up=0,
-    warm_up_states=True,
+    warmup=0,
+    warmup_states=True,
     cache_states=False,
 ):
     """Config dict for Hbv_2_hourly with 3 dynamic parameters."""
     if dynamic_params is None:
         dynamic_params = ['parBETA', 'parK0', 'parBETAET']
     return {
-        'warm_up': warm_up,
-        'warm_up_states': warm_up_states,
+        'warmup': warmup,
+        'warmup_states': warmup_states,
         'dy_drop': 0.0,
         'dynamic_params': {'Hbv_2_hourly': dynamic_params},
         'variables': ['prcp', 'tmean', 'pet'],
