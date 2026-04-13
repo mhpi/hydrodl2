@@ -50,7 +50,7 @@ class HbvAdj(torch.nn.Module):
         self.name = 'HBV Adjoint'
         self.config = config
         self.initialize = False
-        self.warm_up = 0
+        self.warmup = 0
         self.dynamic_params = []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
@@ -84,7 +84,7 @@ class HbvAdj(torch.nn.Module):
 
         if config is not None:
             # Overwrite defaults with config values.
-            self.warm_up = config.get('warm_up', self.warm_up)
+            self.warmup = config.get('warmup', self.warmup)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
             self.dynamic_params = config['dynamic_params'].get(
                 self.__class__.__name__, self.dynamic_params
@@ -258,35 +258,35 @@ class HbvAdj(torch.nn.Module):
         y_init = torch.zeros((bsnew, nS)).to(self.device)
         nflux = 1  # currently only return streamflow
         delta_t = torch.tensor(1.0).to(device=self.device)  ## Daily model
-        if self.warm_up > 0:
+        if self.warmup > 0:
             phy_params_warmup = self.make_phy_parameters(
-                phy_params[: self.warm_up, :, :], self.phy_param_names, []
+                phy_params[: self.warmup, :, :], self.phy_param_names, []
             )
-            x_warmup = x[: self.warm_up, :, :].unsqueeze(1).repeat([1, self.nmul, 1, 1])
+            x_warmup = x[: self.warmup, :, :].unsqueeze(1).repeat([1, self.nmul, 1, 1])
             x_warmup = x_warmup.view(x_warmup.shape[0], bsnew, x_warmup.shape[-1])
-            f_warm_up = HBV(x_warmup, self.parameter_bounds)
-            M_warm_up = MOL(
-                f_warm_up,
+            f_warmup = HBV(x_warmup, self.parameter_bounds)
+            M_warmup = MOL(
+                f_warmup,
                 nS,
                 nflux,
-                self.warm_up,
+                self.warmup,
                 bsDefault=bsnew,
                 mtd=0,
                 dtDefault=delta_t,
                 ad_efficient=self.ad_efficient,
             )
-            y0 = M_warm_up.nsteps_pDyn(phy_params_warmup, y_init)[-1, :, :]
+            y0 = M_warmup.nsteps_pDyn(phy_params_warmup, y_init)[-1, :, :]
         else:
             y0 = y_init
 
         phy_params_run = self.make_phy_parameters(
-            phy_params[self.warm_up :, :, :], self.phy_param_names, self.dynamic_params
+            phy_params[self.warmup :, :, :], self.phy_param_names, self.dynamic_params
         )
         routy_params_dict = self.descale_rout_parameters(
             routing_params, self.rout_params_name
         )
 
-        xTrain = x[self.warm_up :, :, :].unsqueeze(1).repeat([1, self.nmul, 1, 1])
+        xTrain = x[self.warmup :, :, :].unsqueeze(1).repeat([1, self.nmul, 1, 1])
         xTrain = xTrain.view(xTrain.shape[0], bsnew, xTrain.shape[-1])
         # Without warm-up, initialize state variables with zeros.
 
