@@ -43,9 +43,9 @@ class Hbv_2(torch.nn.Module):
         self.name = 'HBV 2.0'
         self.config = config
         self.initialize = False
-        self.warm_up = 0
+        self.warmup = 0
         self.pred_cutoff = 0
-        self.warm_up_states = True
+        self.warmup_states = True
         self.dynamic_params = []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
@@ -116,8 +116,8 @@ class Hbv_2(torch.nn.Module):
 
         if config is not None:
             # Overwrite defaults with config values.
-            self.warm_up = config.get('warm_up', self.warm_up)
-            self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
+            self.warmup = config.get('warmup', self.warmup)
+            self.warmup_states = config.get('warmup_states', self.warmup_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
             self.dynamic_params = config['dynamic_params'].get(
                 self.__class__.__name__, self.dynamic_params
@@ -664,7 +664,7 @@ class Hbv_2(torch.nn.Module):
                 'BFI': BFI_sim,  # Baseflow index
             }
 
-            if not self.warm_up_states:
+            if not self.warmup_states:
                 for key in flux_dict.keys():
                     if key != 'BFI':
                         flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]

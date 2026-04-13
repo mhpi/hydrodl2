@@ -98,14 +98,14 @@ class TestStateManagement:
 class TestWarmUp:
     """Verify warmup period behavior."""
 
-    def test_warm_up_states_mode(self):
+    def test_warmup_states_mode(self):
         Hbv = load_model('hbv')
-        warm_up = 5
-        total_steps = NSTEPS + warm_up
+        warmup = 5
+        total_steps = NSTEPS + warmup
         config = _hbv_config_dict(
             dynamic_params=['parBETA'],
-            warm_up=warm_up,
-            warm_up_states=True,
+            warmup=warmup,
+            warmup_states=True,
         )
         model = Hbv(config, device=DEVICE)
         torch.manual_seed(SEED)
@@ -113,16 +113,16 @@ class TestWarmUp:
         result = model(x_dict, params)
         assert result['streamflow'].shape[0] == NSTEPS
 
-    def test_no_warm_up_states_mode(self):
+    def test_no_warmup_states_mode(self):
         Hbv = load_model('hbv')
-        warm_up = 5
+        warmup = 5
         config = _hbv_config_dict(
             dynamic_params=['parBETA'],
-            warm_up=warm_up,
-            warm_up_states=False,
+            warmup=warmup,
+            warmup_states=False,
         )
         model = Hbv(config, device=DEVICE)
         torch.manual_seed(SEED)
         x_dict, params = make_hbv_inputs(model, nsteps=NSTEPS)
         result = model(x_dict, params)
-        assert result['streamflow'].shape[0] == NSTEPS - warm_up
+        assert result['streamflow'].shape[0] == NSTEPS - warmup

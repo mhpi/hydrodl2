@@ -42,9 +42,9 @@ class Hbv(torch.nn.Module):
         self.name = 'HBV 1.0'
         self.config = config
         self.initialize = False
-        self.warm_up = 0
+        self.warmup = 0
         self.pred_cutoff = 0
-        self.warm_up_states = True
+        self.warmup_states = True
         self.dynamic_params = []
         self.dy_drop = 0.0
         self.variables = ['prcp', 'tmean', 'pet']
@@ -108,8 +108,8 @@ class Hbv(torch.nn.Module):
 
         if config is not None:
             # Overwrite defaults with config values.
-            self.warm_up = config.get('warm_up', self.warm_up)
-            self.warm_up_states = config.get('warm_up_states', self.warm_up_states)
+            self.warmup = config.get('warmup', self.warmup)
+            self.warmup_states = config.get('warmup_states', self.warmup_states)
             self.dy_drop = config.get('dy_drop', self.dy_drop)
             self.dynamic_params = config['dynamic_params'].get(
                 self.__class__.__name__, self.dynamic_params
@@ -310,23 +310,23 @@ class Hbv(torch.nn.Module):
             self.routing_param_dict = self._descale_route_parameters(routing_params)
 
         # Initialization
-        if self.warm_up_states:
-            warm_up = self.warm_up
+        if self.warmup_states:
+            warmup = self.warmup
         else:
-            # No state warm up: run the full model for warm_up days.
-            self.pred_cutoff = self.warm_up
-            warm_up = 0
+            # No state warm up: run the full model for warmup days.
+            self.pred_cutoff = self.warmup
+            warmup = 0
 
         if (not self.states) or (not self.cache_states):
             current_states = self._init_states(ngrid)
         else:
             current_states = self.states
 
-        # Warm-up model states - run the model only on warm_up days first.
-        if warm_up > 0:
+        # Warm-up model states - run the model only on warmup days first.
+        if warmup > 0:
             with torch.no_grad():
                 phy_param_warmup_dict = self._descale_phy_parameters(
-                    phy_params[:warm_up, :, :],
+                    phy_params[:warmup, :, :],
                     dy_list=[],
                 )
                 # a. Save current model settings.
@@ -336,7 +336,7 @@ class Hbv(torch.nn.Module):
                 self.initialize, self.routing = True, False
 
                 current_states = self._PBM(
-                    x[:warm_up, :, :],
+                    x[:warmup, :, :],
                     current_states,
                     phy_param_warmup_dict,
                 )
@@ -346,10 +346,10 @@ class Hbv(torch.nn.Module):
 
         # Run the model for remainder of the simulation period.
         phy_params_dict = self._descale_phy_parameters(
-            phy_params[warm_up:, :, :],
+            phy_params[warmup:, :, :],
             dy_list=self.dynamic_params,
         )
-        fluxes, states = self._PBM(x[warm_up:, :, :], current_states, phy_params_dict)
+        fluxes, states = self._PBM(x[warmup:, :, :], current_states, phy_params_dict)
 
         # State caching
         self._states_cache = [s.detach() for s in states]
@@ -588,7 +588,7 @@ class Hbv(torch.nn.Module):
                 'BFI': BFI_sim,  # Baseflow index
             }
 
-            if not self.warm_up_states:
+            if not self.warmup_states:
                 for key in flux_dict.keys():
                     if key != 'BFI':
                         flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
