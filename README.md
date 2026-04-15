@@ -1,10 +1,12 @@
-<p align="center"><img src="docs/images/hydrodl2.drawio.svg" alt="HydroDL2" width="300"></p>
+<p align="center">
+  <img src="https://github.com/mhpi/hydrodl2/blob/master/docs/images/hydrodl2.drawio.svg?raw=true" alt="HydroDL2" width="300">
+</p>
 
 <h1 align="center">Differentiable Hydrologic Models</h1>
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9--3.13-blue?labelColor=333333" alt="Python"></a>
-  <a href="https://pypi.org/project/hydrodl2/"><img src="https://img.shields.io/pypi/v/hydrodl2?logo=pypi&logoColor=white&labelColor=333333" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/hydrodl2/"><img src="https://img.shields.io/pypi/v/hydrodl2?cacheSeconds=300&logo=pypi&logoColor=white&labelColor=333333" alt="PyPI version"></a>
   <a href="https://pypi.org/project/torch/"><img src="https://img.shields.io/badge/dynamic/json?label=PyTorch&query=info.version&url=https%3A%2F%2Fpypi.org%2Fpypi%2Ftorch%2Fjson&logo=pytorch&color=EE4C2C&logoColor=F900FF&labelColor=333333" alt="PyTorch"></a>
 </p>
 
@@ -30,7 +32,7 @@ See [`𝛿MG/examples`](https://github.com/mhpi/generic_deltamodel/tree/master/e
 uv pip install hydrodl2
 ```
 
-For development installs, see [setup](./docs/setup.md).
+For development installs, see [setup](https://github.com/mhpi/hydrodl2/blob/master/docs/setup.md).
 
 ## Quick Start
 
@@ -160,22 +162,26 @@ Models:
 
     </br>
 
-3. **(HBV 1.1p)** Yalan Song, Kamlesh Sawadekar, Jonathan M Frame, et al. Physics-informed, Differentiable Hydrologic  Models for Capturing Unseen Extreme Events  . ESS Open Archive . March 14, 2025. <https://doi.org/10.22541/essoar.172304428.82707157/v2> **[Accepted]**
+3. **(HBV 1.1p)** Song, Y., Sawadekar, K., Frame, J. M., Pan, M., Clark, M. P., Knoben, W. J. M., et al. (2026). Physics-informed, Differentiable hydrologic models for capturing unseen extreme events. Water Resources Research, 62, e2025WR040414. <https://doi.org/10.1029/2025WR040414>
 
     <details>
     <summary>BibTeX</summary>
 
     ```bibtex
-    @article{https://doi.org/10.22541/essoar.172304428.82707157/v2,
-        author = {Song, Yalan and Sawadekar, Kamlesh and Frame, Jonathan and Pan, Ming and Clark, Martyn and Knoben, Wouter J. M. and Wood W., Andrew and Lawson E., Kathryn and Patel, Trupesh and Shen, Chaopeng},
-        title = {Physics-informed, Differentiable Hydrologic  Models for Capturing Unseen Extreme Events},
-        journal = {ESS Open Archive},
-        volume = {},
-        number = {},
-        pages = {},
-        keywords = {hydrology, differentiable modeling, extremes, physics-informed machine learning, streamflow, streamflow regime},
-        doi = {https://doi.org/10.22541/essoar.172304428.82707157/v2},
-        year = {2025},
+    @article{https://doi.org/10.1029/2025WR040414,
+      author = {Song, Yalan and Sawadekar, Kamlesh and Frame, Jonathan M. and Pan, Ming and Clark, Martyn P. and Knoben, Wouter J. M. and Wood, Andrew W. and Lawson, Kathryn E. and Patel, Trupesh and Shen, Chaopeng},
+      title = {Physics-Informed, Differentiable Hydrologic Models for Capturing Unseen Extreme Events},
+      journal = {Water Resources Research},
+      volume = {62},
+      number = {2},
+      pages = {e2025WR040414},
+      keywords = {differentiable models, LSTM, physics-informed machine learning, HBV, extreme event},
+      doi = {https://doi.org/10.1029/2025WR040414},
+      url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2025WR040414},
+      eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2025WR040414},
+      note = {e2025WR040414 2025WR040414},
+      year = {2026}
+    }
     ```
 
     </details>
@@ -226,7 +232,7 @@ Models:
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for details.
+We welcome contributions! See [CONTRIBUTING.md](https://github.com/mhpi/hydrodl2/blob/master/docs/CONTRIBUTING.md) for details.
 
 ---
 
