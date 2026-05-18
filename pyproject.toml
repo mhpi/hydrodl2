@@ -30,7 +30,6 @@ keywords = [
 dependencies = [
     "numpy",
     "platformdirs",
-    "sourcedefender",
     "torch",
     "tqdm",
 ]
