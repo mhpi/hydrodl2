@@ -348,10 +348,10 @@ class Hbv_2_mts(torch.nn.Module):
 
     def state_transfer(self, states: list[torch.Tensor]):
         """Map low-frequency states to high-frequency states."""
-        states_dict = dict(zip(self.high_freq_model.state_names, states))
+        states_dict = dict(zip(self.low_freq_model.state_names, states))
         return [
             self.state_transfer_model[key](states_dict[key])
-            for key in states_dict.keys()
+            for key in self.low_freq_model.state_names
         ]
 
     @staticmethod
