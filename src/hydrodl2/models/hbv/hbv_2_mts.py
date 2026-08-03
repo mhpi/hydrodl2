@@ -249,7 +249,7 @@ class Hbv_2_mts(torch.nn.Module):
         high_freq_length = runoff.shape[0]
 
         # Chunked routing
-        _, _, _, distr_params = self.high_freq_model.unpack_parameters(parameters[1])
+        _, _, _, distr_params = self.high_freq_model._unpack_parameters(parameters[1])
         distr_params_dict = self.high_freq_model._descale_distr_parameters(distr_params)
         distr_params_dict = {
             key: value.to(device) for key, value in distr_params_dict.items()
