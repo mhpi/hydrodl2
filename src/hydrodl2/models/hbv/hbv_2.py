@@ -2,10 +2,11 @@ from typing import Any, Optional, Union
 
 import torch
 
-from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
+from hydrodl2.core.calc import change_param_range, trim_warmup, uh_conv, uh_gamma
+from hydrodl2.models.base import BasePhysicsModel
 
 
-class Hbv_2(torch.nn.Module):
+class Hbv_2(BasePhysicsModel):
     """HBV 2.0.
 
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
@@ -42,9 +43,7 @@ class Hbv_2(torch.nn.Module):
         super().__init__()
         self.name = 'HBV 2.0'
         self.config = config
-        self.initialize = False
         self.warmup = 0
-        self.pred_cutoff = 0
         self.warmup_states = True
         self.dynamic_params = []
         self.dy_drop = 0.0
@@ -137,48 +136,6 @@ class Hbv_2(torch.nn.Module):
             self.elev_parTT = config.get('elev_parTT', self.elev_parTT)
             self.gage_agg = config.get('gage_agg', self.gage_agg)
         self._set_parameters()
-
-    def _init_states(self, ngrid: int) -> tuple[torch.Tensor]:
-        """Initialize model states to zero."""
-
-        def make_state():
-            return torch.full(
-                (ngrid, self.nmul), 0.001, dtype=torch.float32, device=self.device
-            )
-
-        return tuple(make_state() for _ in range(len(self.state_names)))
-
-    def get_states(self) -> Optional[tuple[torch.Tensor, ...]]:
-        """Return internal model states.
-
-        Returns
-        -------
-        tuple[torch.Tensor, ...]
-            A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
-        """
-        return self._state_cache
-
-    def load_states(
-        self,
-        states: tuple[torch.Tensor, ...],
-    ) -> None:
-        """Load internal model states and set to model device and type.
-
-        Parameters
-        ----------
-        states
-            A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
-        """
-        for state in states:
-            if not isinstance(state, torch.Tensor):
-                raise ValueError("Each element in `states` must be a tensor.")
-        nstates = len(self.state_names)
-        if not (isinstance(states, tuple) and len(states) == nstates):
-            raise ValueError(f"`states` must be a tuple of {nstates} tensors.")
-
-        self.states = tuple(
-            s.detach().to(self.device, dtype=torch.float32) for s in states
-        )
 
     def _set_parameters(self) -> None:
         """Get physical parameters."""
@@ -309,32 +266,6 @@ class Hbv_2(torch.nn.Module):
             )
         return parameter_dict
 
-    def _descale_route_parameters(
-        self,
-        routing_params: torch.Tensor,
-    ) -> torch.Tensor:
-        """Descale routing parameters.
-
-        Parameters
-        ----------
-        routing_params
-            Normalized routing parameters.
-
-        Returns
-        -------
-        dict
-            Dictionary of descaled routing parameters.
-        """
-        parameter_dict = {}
-        for i, name in enumerate(self.routing_parameter_bounds.keys()):
-            param = routing_params[:, i]
-
-            parameter_dict[name] = change_param_range(
-                param=param,
-                bounds=self.routing_parameter_bounds[name],
-            )
-        return parameter_dict
-
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
@@ -391,6 +322,11 @@ class Hbv_2(torch.nn.Module):
         else:
             current_states = self.states
 
+        # Hbv_2 has no separate no-grad spin-up pass: the full window is always
+        # simulated and the warm-up days are dropped from the outputs below.
+        # `warmup_states` therefore has no effect on this model.
+        pred_cutoff = self.warmup
+
         fluxes, states = self._PBM(
             x,
             Ac,
@@ -400,6 +336,11 @@ class Hbv_2(torch.nn.Module):
             phy_static_params_dict,
             agg_info=agg_info,
         )
+
+        # Drop the warm-up period here, at the model boundary, so that forward()
+        # always returns exactly `nsteps - self.warmup` timesteps. Time-collapsed
+        # outputs (e.g. BFI) pass through untouched.
+        fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0])
 
         # State caching
         self._state_cache = states
@@ -740,9 +681,6 @@ class Hbv_2(torch.nn.Module):
         else:
             states = None
 
-        if self.initialize:
-            # If initialize is True, only return warmed-up storages.
-            return {}, states
 
         if not self.all_output:
             # Compact output: only streamflow and ET
@@ -752,9 +690,6 @@ class Hbv_2(torch.nn.Module):
                 if _compact
                 else AET.mean(-1, keepdim=True),
             }
-            if not self.warmup_states:
-                for key in flux_dict:
-                    flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
             return flux_dict, states
 
         # Full diagnostic output.
@@ -786,8 +721,4 @@ class Hbv_2(torch.nn.Module):
             'BFI': BFI_sim,  # Baseflow index
         }
 
-        if not self.warmup_states:
-            for key in flux_dict.keys():
-                if key != 'BFI':
-                    flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
         return flux_dict, states

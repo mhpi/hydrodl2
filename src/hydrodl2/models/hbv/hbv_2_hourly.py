@@ -2,10 +2,11 @@ from typing import Any, Optional, Union
 
 import torch
 
-from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
+from hydrodl2.core.calc import change_param_range, trim_warmup, uh_conv, uh_gamma
+from hydrodl2.models.base import BasePhysicsModel
 
 
-class Hbv_2_hourly(torch.nn.Module):
+class Hbv_2_hourly(BasePhysicsModel):
     """Hourly HBV 2.0.
 
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
@@ -40,7 +41,6 @@ class Hbv_2_hourly(torch.nn.Module):
         super().__init__()
         self.name = 'HBV 2.0 Hourly'
         self.config = config
-        self.initialize = False
         self.warmup = 0
         self.pred_cutoff = 0
         self.warmup_states = True
@@ -56,7 +56,7 @@ class Hbv_2_hourly(torch.nn.Module):
         self.cache_states = False
         self.device = device
 
-        self.states, self._states_cache = None, None
+        self.states, self._state_cache = None, None
 
         self._qs_buffer = []
         self._max_history = 100  # Safe buffer size > lenF (72)
@@ -154,48 +154,6 @@ class Hbv_2_hourly(torch.nn.Module):
             self.nmul = config.get('nmul', self.nmul)
             self.cache_states = config.get('cache_states', self.cache_states)
         self._set_parameters()
-
-    def _init_states(self, ngrid: int) -> tuple[torch.Tensor]:
-        """Initialize model states to zero."""
-
-        def make_state():
-            return torch.full(
-                (ngrid, self.nmul), 0.001, dtype=torch.float32, device=self.device
-            )
-
-        return tuple(make_state() for _ in range(len(self.state_names)))
-
-    def get_states(self) -> Optional[tuple[torch.Tensor, ...]]:
-        """Return internal model states.
-
-        Returns
-        -------
-        tuple[torch.Tensor, ...]
-            A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
-        """
-        return self._states_cache
-
-    def load_states(
-        self,
-        states: tuple[torch.Tensor, ...],
-    ) -> None:
-        """Load internal model states and set to model device and type.
-
-        Parameters
-        ----------
-        states
-            A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
-        """
-        for state in states:
-            if not isinstance(state, torch.Tensor):
-                raise ValueError("Each element in `states` must be a tensor.")
-        nstates = len(self.state_names)
-        if not (isinstance(states, tuple) and len(states) == nstates):
-            raise ValueError(f"`states` must be a tuple of {nstates} tensors.")
-
-        self.states = tuple(
-            s.detach().to(self.device, dtype=torch.float32) for s in states
-        )
 
     def _set_parameters(self) -> None:
         """Get physical parameters."""
@@ -327,32 +285,6 @@ class Hbv_2_hourly(torch.nn.Module):
             )
         return parameter_dict
 
-    def _descale_route_parameters(
-        self,
-        routing_params: torch.Tensor,
-    ) -> torch.Tensor:
-        """Descale routing parameters.
-
-        Parameters
-        ----------
-        routing_params
-            Normalized routing parameters.
-
-        Returns
-        -------
-        dict
-            Dictionary of descaled routing parameters.
-        """
-        parameter_dict = {}
-        for i, name in enumerate(self.routing_parameter_bounds.keys()):
-            param = routing_params[:, i]
-
-            parameter_dict[name] = change_param_range(
-                param=param,
-                bounds=self.routing_parameter_bounds[name],
-            )
-        return parameter_dict
-
     def _descale_distr_parameters(
         self,
         distr_params: torch.Tensor,
@@ -434,6 +366,12 @@ class Hbv_2_hourly(torch.nn.Module):
 
         distr_params_dict = self._descale_distr_parameters(distr_params)
 
+        # Hbv_2_hourly has no separate no-grad spin-up pass: the full window is
+        # always simulated and the warm-up steps are dropped from the outputs
+        # below. `warmup_states` therefore has no effect on this model.
+        pred_cutoff = self.warmup
+        self.pred_cutoff = pred_cutoff
+
         fluxes, states = self._PBM(
             x,
             Ac,
@@ -445,6 +383,11 @@ class Hbv_2_hourly(torch.nn.Module):
             areas,
             distr_params_dict,
         )
+
+        # Drop the warm-up period here, at the model boundary, so that forward()
+        # always returns exactly `nsteps - self.warmup` timesteps. Time-collapsed
+        # outputs (e.g. BFI) pass through untouched.
+        fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0])
 
         # State caching
         self._state_cache = states
@@ -730,78 +673,69 @@ class Hbv_2_hourly(torch.nn.Module):
 
         states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
 
-        if self.initialize:
-            # If initialize is True, only return warmed-up storages.
-            return {}, states
-        else:
-            # Baseflow index (BFI) calculation
-            # BFI_sim = (
-            #     100
-            #     * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
-            #         :, 0
-            #     ]
-            # )
+        # Baseflow index (BFI) calculation
+        # BFI_sim = (
+        #     100
+        #     * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
+        #         :, 0
+        #     ]
+        # )
 
-            # Return all sim results.
-            flux_dict = {
-                'Qs': Qs * dt,  # Routed Streamflow for units
-                # 'srflow': Q0_rout * dt,  # Routed surface runoff
-                # 'ssflow': Q1_rout * dt,  # Routed subsurface flow
-                # 'gwflow': Q2_rout * dt,  # Routed groundwater flow
-                # 'AET_hydro': AET.mean(-1, keepdim=True) * dt,  # Actual ET
-                # 'PET_hydro': PETm.mean(-1, keepdim=True) * dt,  # Potential ET
-                # 'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-                # 'streamflow_no_rout': Qsim.unsqueeze(dim=2) * dt,  # Streamflow
-                # 'srflow_no_rout': Q0_sim.mean(-1, keepdim=True) * dt,  # Surface runoff
-                # 'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True) * dt,  # Subsurface flow
-                # 'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True) * dt,  # Groundwater flow
-                # 'recharge': recharge_sim.mean(-1, keepdim=True) * dt,  # Recharge
-                # 'excs': excs_sim.mean(-1, keepdim=True) * dt,  # Excess stored water
-                # 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
-                # 'tosoil': tosoil_sim.mean(-1, keepdim=True) * dt,  # Infiltration
-                # 'percolation': PERC_sim.mean(-1, keepdim=True) * dt,  # Percolation
-                # 'capillary': capillary_sim.mean(-1, keepdim=True) * dt,  # Capillary rise
-                # 'BFI': BFI_sim * dt,  # Baseflow index
-            }
+        # Return all sim results.
+        flux_dict = {
+            'Qs': Qs * dt,  # Routed Streamflow for units
+            # 'srflow': Q0_rout * dt,  # Routed surface runoff
+            # 'ssflow': Q1_rout * dt,  # Routed subsurface flow
+            # 'gwflow': Q2_rout * dt,  # Routed groundwater flow
+            # 'AET_hydro': AET.mean(-1, keepdim=True) * dt,  # Actual ET
+            # 'PET_hydro': PETm.mean(-1, keepdim=True) * dt,  # Potential ET
+            # 'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
+            # 'streamflow_no_rout': Qsim.unsqueeze(dim=2) * dt,  # Streamflow
+            # 'srflow_no_rout': Q0_sim.mean(-1, keepdim=True) * dt,  # Surface runoff
+            # 'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True) * dt,  # Subsurface flow
+            # 'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True) * dt,  # Groundwater flow
+            # 'recharge': recharge_sim.mean(-1, keepdim=True) * dt,  # Recharge
+            # 'excs': excs_sim.mean(-1, keepdim=True) * dt,  # Excess stored water
+            # 'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
+            # 'tosoil': tosoil_sim.mean(-1, keepdim=True) * dt,  # Infiltration
+            # 'percolation': PERC_sim.mean(-1, keepdim=True) * dt,  # Percolation
+            # 'capillary': capillary_sim.mean(-1, keepdim=True) * dt,  # Capillary rise
+            # 'BFI': BFI_sim * dt,  # Baseflow index
+        }
 
-            if not self.warmup_states:
-                for key in flux_dict.keys():
-                    if key != 'BFI':
-                        flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
+        if self.use_distr_routing:
+            # 1. Get current Raw Runoff
 
-            if self.use_distr_routing:
-                # 1. Get current Raw Runoff
+            # 2. Manage Buffer
+            if self.cache_states:
+                self._qs_buffer.append((Qs * dt).detach())
+                # Keep buffer reasonable size (at least lenF + tau)
+                if len(self._qs_buffer) > self._max_history:
+                    self._qs_buffer.pop(0)
 
-                # 2. Manage Buffer
-                if self.cache_states:
-                    self._qs_buffer.append((Qs * dt).detach())
-                    # Keep buffer reasonable size (at least lenF + tau)
-                    if len(self._qs_buffer) > self._max_history:
-                        self._qs_buffer.pop(0)
+                # Create history tensor for convolution
+                # [History+1, Units, 1]
+                qs_history = torch.cat(self._qs_buffer, dim=0)
+            else:
+                # If not caching (e.g. training), use what we have
+                qs_history = Qs * dt
 
-                    # Create history tensor for convolution
-                    # [History+1, Units, 1]
-                    qs_history = torch.cat(self._qs_buffer, dim=0)
-                else:
-                    # If not caching (e.g. training), use what we have
-                    qs_history = Qs * dt
+            # Distributed routing for streamflow at gages
+            distr_out_dict = self.distr_routing(
+                Qs=qs_history,
+                distr_params_dict=distr_params_dict,
+                outlet_topo=outlet_topo,
+                areas=areas,
+            )
+            flux_dict['streamflow'] = distr_out_dict['Qs_rout']
 
-                # Distributed routing for streamflow at gages
-                distr_out_dict = self.distr_routing(
-                    Qs=qs_history,
-                    distr_params_dict=distr_params_dict,
-                    outlet_topo=outlet_topo,
-                    areas=areas,
-                )
+            if self.cache_states:
+                # If we passed in history [T], we get out [T]. We only want index -1.
+                flux_dict['streamflow'] = distr_out_dict['Qs_rout'][-1:]
+            else:
                 flux_dict['streamflow'] = distr_out_dict['Qs_rout']
 
-                if self.cache_states:
-                    # If we passed in history [T], we get out [T]. We only want index -1.
-                    flux_dict['streamflow'] = distr_out_dict['Qs_rout'][-1:]
-                else:
-                    flux_dict['streamflow'] = distr_out_dict['Qs_rout']
-
-            return flux_dict, states
+        return flux_dict, states
 
     def distr_routing(
         self,
