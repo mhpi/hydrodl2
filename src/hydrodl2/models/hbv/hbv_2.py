@@ -56,6 +56,11 @@ class Hbv_2(torch.nn.Module):
         self.nearzero = 1e-5
         self.nmul = 1
         self.cache_states = False
+        self.all_output = True  # Flag to output all vars.
+        self.elev_parTT = False  # Override parTT=4.0 for elevations >= 2000m.
+        self.gage_agg = (
+            False  # Aggregate Q to gage level inside HBV loop (reference behavior).
+        )
         self.device = device
 
         self.states, self._state_cache = None, None
@@ -128,6 +133,9 @@ class Hbv_2(torch.nn.Module):
             self.nearzero = config.get('nearzero', self.nearzero)
             self.nmul = config.get('nmul', self.nmul)
             self.cache_states = config.get('cache_states', self.cache_states)
+            self.all_output = config.get('all_output', self.all_output)
+            self.elev_parTT = config.get('elev_parTT', self.elev_parTT)
+            self.gage_agg = config.get('gage_agg', self.gage_agg)
         self._set_parameters()
 
     def _init_states(self, ngrid: int) -> tuple[torch.Tensor]:
@@ -257,12 +265,17 @@ class Hbv_2(torch.nn.Module):
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
         for i, name in enumerate(dy_list):
-            staPar = phy_dy_params[-1, :, i, :].unsqueeze(0).repeat([nsteps, 1, 1])
-
             dynPar = phy_dy_params[:, :, i, :]
-            drmask = torch.bernoulli(pmat).detach_().to(self.device)
 
-            comPar = dynPar * (1 - drmask) + staPar * drmask
+            if self.dy_drop > 0.0:
+                # expand() instead of repeat() saves mem
+                staPar = phy_dy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
+                drmask = torch.bernoulli(pmat).detach_().to(self.device)
+                comPar = dynPar * (1 - drmask) + staPar * drmask
+            else:
+                # When dy_drop=0, staPar is never used, so skip
+                comPar = dynPar
+            
             param_dict[name] = change_param_range(
                 param=comPar,
                 bounds=self.parameter_bounds[name],
@@ -348,6 +361,11 @@ class Hbv_2(torch.nn.Module):
         self.muwts = x_dict.get('muwts', None)
         ngrid = x.shape[1]
 
+        # Gage-level aggregation info (used when gage_agg=True).
+        agg_info = None
+        if self.gage_agg and 'areas' in x_dict and 'outlet_topo' in x_dict:
+            agg_info = (x_dict['areas'], x_dict['outlet_topo'])
+        
         # Unpack parameters.
         phy_dy_params, phy_static_params, routing_params = self._unpack_parameters(
             parameters
@@ -380,12 +398,13 @@ class Hbv_2(torch.nn.Module):
             current_states,
             phy_dy_params_dict,
             phy_static_params_dict,
+            agg_info=agg_info,
         )
 
         # State caching
         self._state_cache = states
 
-        if self.cache_states:
+        if self.cache_states and states is not None:
             self.states = tuple(s[-1].detach() for s in self._state_cache)
 
         return fluxes
@@ -398,6 +417,7 @@ class Hbv_2(torch.nn.Module):
         states: tuple,
         phy_dy_params_dict: dict,
         phy_static_params_dict: dict,
+        agg_info: tuple = None,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
         """Run through process-based model (PBM).
 
@@ -426,37 +446,91 @@ class Hbv_2(torch.nn.Module):
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
-        Pm = P.unsqueeze(2).repeat(1, 1, self.nmul)
-        Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
-        PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
+        # NOTE: expand() shares mem with the source tensor. Use instead of repeat() to save mem.
+        Pm = P.unsqueeze(2).expand(-1, -1, self.nmul)
+        Tm = T.unsqueeze(2).expand(-1, -1, self.nmul)
+        PETm = PET.unsqueeze(-1).expand(-1, -1, self.nmul)
 
         # Apply correction factor to precipitation
         # P = parPCORR.repeat(nsteps, 1) * P
 
-        # Initialize time series of model variables in shape [time, basins, nmul].
-        Qsimmu = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
-        Q0_sim = (
-            torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
-        )
-        Q1_sim = (
-            torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
-        )
-        Q2_sim = (
-            torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
-        )
+        # Bool for discarding non-critical outputs for training.
+        _compact = not self.all_output and not self.comprout and self.muwts is None
 
-        AET = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        recharge_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        evapfactor_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        capillary_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        # Aggregate Q inside the loop, route at gage level.
+        _gage_agg = agg_info is not None
+        if _gage_agg:
+            areas, outlet_topo = agg_info
+            n_gage = outlet_topo.shape[1]
+            # Force compact mode for gage_agg (no per-component gage output).
+            _compact = True
 
-        # NOTE: new for MTS -- Save model states for all time steps.
-        SNOWPACK_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        MELTWATER_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        # Output dimension: n_gage when aggregating, else ngrid (catchments).
+        out_dim = n_gage if _gage_agg else ngrid
+
+        # Initialize time series model variables in shape [time, basins, nmul].
+        if _compact:
+            Qsimmu = torch.zeros(
+                nsteps,
+                out_dim,
+                dtype=torch.float32,
+                device=self.device,
+            )
+            AET = torch.zeros(
+                nsteps,
+                out_dim,
+                dtype=torch.float32,
+                device=self.device,
+            )
+        else:
+            Qsimmu = (
+                torch.zeros(
+                    Pm.size(),
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                + 0.001
+            )
+            AET = (
+                torch.zeros(
+                    Pm.size(),
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                + 0.001
+            )
+        
+        if self.all_output:
+            Q0_sim = (
+                torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+            )
+            Q1_sim = (
+                torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+            )
+            Q2_sim = (
+                torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+            )
+            recharge_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            evapfactor_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            capillary_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+
+            # Save model states for all time steps.
+            SNOWPACK_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            MELTWATER_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
         SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
@@ -471,15 +545,18 @@ class Hbv_2(torch.nn.Module):
 
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
-            parTT_new = (Elevation >= 2000).type(torch.float32) * 4.0 + (
-                Elevation < 2000
-            ).type(torch.float32) * param_dict['parTT']
-            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT_new).type(torch.float32))
-            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT_new).type(torch.float32))
+            if self.elev_parTT:
+                parTT = (Elevation >= 2000).type(torch.float32) * 4.0 + (
+                    Elevation < 2000
+                ).type(torch.float32) * param_dict['parTT']
+            else:
+                parTT = param_dict['parTT']
+            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT).type(torch.float32))
+            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT).type(torch.float32))
 
             # Snow -------------------------------
             SNOWPACK = SNOWPACK + SNOW
-            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT_new)
+            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT)
             # melt[melt < 0.0] = 0.0
             melt = torch.clamp(melt, min=0.0)
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
@@ -487,9 +564,7 @@ class Hbv_2(torch.nn.Module):
             MELTWATER = MELTWATER + melt
             SNOWPACK = SNOWPACK - melt
             refreezing = (
-                param_dict['parCFR']
-                * param_dict['parCFMAX']
-                * (parTT_new - Tm[t, :, :])
+                param_dict['parCFR'] * param_dict['parCFMAX'] * (parTT - Tm[t, :, :])
             )
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
@@ -554,29 +629,41 @@ class Hbv_2(torch.nn.Module):
             SLZ = SLZ - Q2
 
             # --- Outputs ---
-            Qsimmu[t, :, :] = Q0 + Q1 + Q2
-            Q0_sim[t, :, :] = Q0
-            Q1_sim[t, :, :] = Q1
-            Q2_sim[t, :, :] = Q2
-            AET[t, :, :] = ETact
-            SWE_sim[t, :, :] = SNOWPACK
-            capillary_sim[t, :, :] = capillary
+            if _gage_agg:
+                # Area-weighted aggregation from catchment to gage level.
+                Q_cat = (Q0 + Q1 + Q2).mean(-1)  # [n_cat]
+                Qsimmu[t, :] = (Q_cat * areas) @ outlet_topo
+                AET[t, :] = (ETact.mean(-1) * areas) @ outlet_topo
+            elif _compact:
+                Qsimmu[t, :] = (Q0 + Q1 + Q2).mean(-1)
+                AET[t, :] = ETact.mean(-1)
+            else:
+                Qsimmu[t, :, :] = Q0 + Q1 + Q2
+                AET[t, :, :] = ETact
+            
+            if self.all_output:
+                Q0_sim[t, :, :] = Q0
+                Q1_sim[t, :, :] = Q1
+                Q2_sim[t, :, :] = Q2
+                SWE_sim[t, :, :] = SNOWPACK
+                capillary_sim[t, :, :] = capillary
+                recharge_sim[t, :, :] = recharge
+                excs_sim[t, :, :] = excess
+                evapfactor_sim[t, :, :] = evapfactor
+                tosoil_sim[t, :, :] = tosoil
+                PERC_sim[t, :, :] = PERC
 
-            recharge_sim[t, :, :] = recharge
-            excs_sim[t, :, :] = excess
-            evapfactor_sim[t, :, :] = evapfactor
-            tosoil_sim[t, :, :] = tosoil
-            PERC_sim[t, :, :] = PERC
-
-            # NOTE: new for MTS -- Save model states for all time steps.
-            SNOWPACK_sim[t, :, :] = SNOWPACK
-            MELTWATER_sim[t, :, :] = MELTWATER
-            SM_sim[t, :, :] = SM
-            SUZ_sim[t, :, :] = SUZ
-            SLZ_sim[t, :, :] = SLZ
+                # NOTE: new for MTS -- Save model states for all time steps.
+                SNOWPACK_sim[t, :, :] = SNOWPACK
+                MELTWATER_sim[t, :, :] = MELTWATER
+                SM_sim[t, :, :] = SM
+                SUZ_sim[t, :, :] = SUZ
+                SLZ_sim[t, :, :] = SLZ
 
         # Get the average or weighted average using learned weights.
-        if self.muwts is None:
+        if _compact:
+            Qsimavg = Qsimmu  # Already averaged in the loop.
+        elif self.muwts is None:
             Qsimavg = Qsimmu.mean(-1)
         else:
             Qsimavg = (Qsimmu * self.muwts).sum(-1)
@@ -584,29 +671,50 @@ class Hbv_2(torch.nn.Module):
         # Run routing
         if self.routing:
             # Routing for all components or just the average.
-            if self.comprout:
+            if self.comprout and not _gage_agg:
                 # All components; reshape to [time, gages * num models]
                 Qsim = Qsimmu.view(nsteps, ngrid * self.nmul)
             else:
                 # Average, then do routing.
                 Qsim = Qsimavg
 
-            UH = uh_gamma(
-                self.routing_param_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
-                self.routing_param_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
-                lenF=self.lenF,
-            )
+            if _gage_agg:
+                # Aggregate routing params to gage level.
+                route_a_gage = (
+                    self.routing_param_dict['route_a'] * areas
+                ) @ outlet_topo
+                route_b_gage = (
+                    self.routing_param_dict['route_b'] * areas
+                ) @ outlet_topo
+                UH = uh_gamma(
+                    route_a_gage.repeat(self.lenF, 1).unsqueeze(-1),
+                    route_b_gage.repeat(self.lenF, 1).unsqueeze(-1),
+                    lenF=self.lenF,
+                )
+            else:
+                # uh_gamma only uses first lenF rows, so use lenF instead of expanding (save mem)
+                UH = uh_gamma(
+                    self.routing_param_dict['route_a']
+                    .repeat(self.lenF, 1)
+                    .unsqueeze(-1),
+                    self.routing_param_dict['route_b']
+                    .repeat(self.lenF, 1)
+                    .unsqueeze(-1),
+                    lenF=self.lenF,
+                )
+
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
             Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
-            # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
-            rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
-            rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
-            rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+            if self.all_output:
+                # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
+                rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+                Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
+                rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+                Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
+                rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+                Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
 
             if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
@@ -622,50 +730,64 @@ class Hbv_2(torch.nn.Module):
             # No routing, only output the average of all model sims.
             Qsim = Qsimavg
             Qs = torch.unsqueeze(Qsimavg, -1)
-            Q0_rout = Q0_sim.mean(-1, keepdim=True)
-            Q1_rout = Q1_sim.mean(-1, keepdim=True)
-            Q2_rout = Q2_sim.mean(-1, keepdim=True)
+            if self.all_output:
+                Q0_rout = Q0_sim.mean(-1, keepdim=True)
+                Q1_rout = Q1_sim.mean(-1, keepdim=True)
+                Q2_rout = Q2_sim.mean(-1, keepdim=True)
 
-        states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
+        if self.all_output:
+            states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
+        else:
+            states = None
 
         if self.initialize:
             # If initialize is True, only return warmed-up storages.
             return {}, states
-        else:
-            # Baseflow index (BFI) calculation
-            BFI_sim = (
-                100
-                * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
-                    :, 0
-                ]
-            )
 
-            # Return all sim results.
+        if not self.all_output:
+            # Compact output: only streamflow and ET
             flux_dict = {
-                'streamflow': Qs,  # Routed Streamflow
-                'srflow': Q0_rout,  # Routed surface runoff
-                'ssflow': Q1_rout,  # Routed subsurface flow
-                'gwflow': Q2_rout,  # Routed groundwater flow
-                'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
-                'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
-                'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-                'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
-                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
-                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
-                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
-                'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
-                'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
-                'evapfactor': evapfactor_sim.mean(
-                    -1, keepdim=True
-                ),  # Evaporation factor
-                'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
-                'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
-                'capillary': capillary_sim.mean(-1, keepdim=True),  # Capillary rise
-                'BFI': BFI_sim,  # Baseflow index
+                'streamflow': Qs,
+                'AET_hydro': AET.unsqueeze(-1)
+                if _compact
+                else AET.mean(-1, keepdim=True),
             }
-
             if not self.warmup_states:
-                for key in flux_dict.keys():
-                    if key != 'BFI':
-                        flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
+                for key in flux_dict:
+                    flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
             return flux_dict, states
+
+        # Full diagnostic output.
+        # Baseflow index
+        BFI_sim = (
+            100
+            * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[:, 0]
+        )
+
+        # Return all sim results.
+        flux_dict = {
+            'streamflow': Qs,  # Routed Streamflow
+            'srflow': Q0_rout,  # Routed surface runoff
+            'ssflow': Q1_rout,  # Routed subsurface flow
+            'gwflow': Q2_rout,  # Routed groundwater flow
+            'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
+            'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
+            'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
+            'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
+            'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
+            'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
+            'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
+            'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
+            'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
+            'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
+            'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
+            'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
+            'capillary': capillary_sim.mean(-1, keepdim=True),  # Capillary rise
+            'BFI': BFI_sim,  # Baseflow index
+        }
+
+        if not self.warmup_states:
+            for key in flux_dict.keys():
+                if key != 'BFI':
+                    flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
+        return flux_dict, states

@@ -1,7 +1,4 @@
-"""
-Note: If adding new public methods, please add them to __all__
-at the top of the file and in api/__init__.py.
-"""
+"""API methods for loading and managing models in HydroDL2."""
 
 import importlib.util
 import logging
@@ -120,21 +117,26 @@ def load_model(model: str, ver_name: str = None) -> Module:
     # Retrieve version name if possible, otherwise get first class in module
     try:
         cls = getattr(module, ver_name)
-    except AttributeError as e:
-        # Find first class in module (NOTE: not guaranteed accurate)
-        classes = [
-            attr
-            for attr in dir(module)
-            if isinstance(getattr(module, attr), type) and attr != 'Any'
-        ]
-        if not classes:
-            raise ImportError(f"Model version '{model}' not found.") from e
+    except AttributeError:
+        # Try PascalCase conversion (e.g., Prms_Gw0_Triton -> PrmsGw0Triton)
+        pascal_name = ''.join(w.title() for w in ver_name.split('_'))
+        try:
+            cls = getattr(module, pascal_name)
+        except AttributeError as e:
+            # Find first class in module (NOTE: not guaranteed accurate)
+            classes = [
+                attr
+                for attr in dir(module)
+                if isinstance(getattr(module, attr), type) and attr != 'Any'
+            ]
+            if not classes:
+                raise ImportError(f"Model version '{model}' not found.") from e
 
-        log.warning(
-            f"Model class '{ver_name}' not found in module '{module.__file__}'. "
-            f"Falling back to the first available: '{classes[0]}'."
-        )
-        cls = getattr(module, classes[0])
+            log.warning(
+                f"Model class '{ver_name}' not found in module '{module.__file__}'. "
+                f"Falling back to the first available: '{classes[0]}'."
+            )
+            cls = getattr(module, classes[0])
 
     return cls
 

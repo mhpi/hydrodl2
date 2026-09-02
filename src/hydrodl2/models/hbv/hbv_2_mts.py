@@ -63,6 +63,7 @@ class Hbv_2_mts(torch.nn.Module):
         #         for name in self.high_freq_model.state_names
         #     }
         # )
+
         # Identity state transfer
         self.state_transfer_model = torch.nn.ModuleDict(
             {name: torch.nn.Identity() for name in self.high_freq_model.state_names}
