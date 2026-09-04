@@ -800,9 +800,9 @@ class Hbv_2_hourly(BasePhysicsModel):
         """
         Differentiable fractional shift: return w(t - tau) by mixing k- and
         (k+1)-step shifts.
-        
+
         For tau = k + f (0<=f<1): y[t] = (1-f)*w[t-k] + f*w[t-(k+1)].
-        
+
         w:   [T,B,V].
         tau: [B,V]  (>=0 recommended).
         """

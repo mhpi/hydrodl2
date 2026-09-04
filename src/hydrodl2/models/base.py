@@ -74,14 +74,14 @@ class BasePhysicsModel(torch.nn.Module):
         routing_params: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         """Map normalized routing parameters onto their physical ranges.
-        
+
         Shape: [ngrid, n_route, nmul]
 
         Parameters
         ----------
         routing_params
             Normalized routing parameters.
-        
+
         Returns
         -------
         dict
@@ -101,7 +101,7 @@ class BasePhysicsModel(torch.nn.Module):
         dy_list: list[str],
     ) -> dict[str, torch.Tensor]:
         """Descale the time-dynamic physical parameters.
-        
+
         Shape: [nsteps, ngrid, n_dynamic, nmul]
 
         Parameters
@@ -124,7 +124,7 @@ class BasePhysicsModel(torch.nn.Module):
         stat_list: list[str],
     ) -> dict[str, torch.Tensor]:
         """Descale the time-invariant physical parameters.
-        
+
         Shape: [ngrid, n_static, nmul]
 
         Parameters
@@ -145,7 +145,7 @@ class BasePhysicsModel(torch.nn.Module):
         parameters: Any,
     ) -> dict[str, torch.Tensor]:
         """Forward pass.
-        
+
         Parameters
         ----------
         x_dict
