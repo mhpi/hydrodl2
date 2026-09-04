@@ -21,9 +21,10 @@ class Hbv_2_hourly(BasePhysicsModel):
 
     Publication
     -----------
-    -   Yang, W., Ji, H., Lonzarich, L., Song, Y., Shen, C. (2025). Diffusion-Based
-        Probabilistic Modeling for Hourly Streamflow Prediction and Assimilation.
-        arXiv. https://arxiv.org/abs/2510.08488 **[Under Review]**
+    -   Yang, W., Ji, H., Lonzarich, L., Song, Y., Pan, M., Lawson, K., & Shen,
+        C. (2026). Diffusion-Based Probabilistic Modeling for Hourly Streamflow
+        Prediction and Assimilation. Water Resources Research, 62,
+        e2025WR042720. https://doi.org/10.1029/2025WR042720
 
     Parameters
     ----------
@@ -158,6 +159,12 @@ class Hbv_2_hourly(BasePhysicsModel):
     def _set_parameters(self) -> None:
         """Get physical parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
+
+        # Ensure NN output channels map to param names consistently.
+        self.dynamic_params = [
+            name for name in self.phy_param_names if name in self.dynamic_params
+        ]
+
         if self.routing:
             self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
@@ -366,9 +373,6 @@ class Hbv_2_hourly(BasePhysicsModel):
 
         distr_params_dict = self._descale_distr_parameters(distr_params)
 
-        # Hbv_2_hourly has no separate no-grad spin-up pass: the full window is
-        # always simulated and the warm-up steps are dropped from the outputs
-        # below. `warmup_states` therefore has no effect on this model.
         pred_cutoff = self.warmup
         self.pred_cutoff = pred_cutoff
 
@@ -384,9 +388,6 @@ class Hbv_2_hourly(BasePhysicsModel):
             distr_params_dict,
         )
 
-        # Drop the warm-up period here, at the model boundary, so that forward()
-        # always returns exactly `nsteps - self.warmup` timesteps. Time-collapsed
-        # outputs (e.g. BFI) pass through untouched.
         fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0])
 
         # State caching
@@ -437,9 +438,10 @@ class Hbv_2_hourly(BasePhysicsModel):
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
-        Pm = P.unsqueeze(2).repeat(1, 1, self.nmul)
-        Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
-        PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
+        # NOTE:expand() instead of repeat() saves mem (don't do inplace writes)
+        Pm = P.unsqueeze(2).expand(-1, -1, self.nmul)
+        Tm = T.unsqueeze(2).expand(-1, -1, self.nmul)
+        PETm = PET.unsqueeze(-1).expand(-1, -1, self.nmul)
 
         # Apply correction factor to precipitation
         # P = parPCORR.repeat(nsteps, 1) * P
@@ -790,15 +792,17 @@ class Hbv_2_hourly(BasePhysicsModel):
         Qs_rout = Qs_rout / denom
         Qs_rout = Qs_rout.T.unsqueeze(-1)  # (nsteps, n_gages, 1)
 
-        # output
         output = {'Qs_rout': Qs_rout}
         return output
 
     @staticmethod
     def _frac_shift1d(w, tau):
         """
-        Differentiable fractional shift: return w(t - tau) by mixing k- and (k+1)-step shifts.
+        Differentiable fractional shift: return w(t - tau) by mixing k- and
+        (k+1)-step shifts.
+        
         For tau = k + f (0<=f<1): y[t] = (1-f)*w[t-k] + f*w[t-(k+1)].
+        
         w:   [T,B,V].
         tau: [B,V]  (>=0 recommended).
         """

@@ -1,5 +1,3 @@
-"""Shared base class for HydroDL2 process-based (physics) models."""
-
 from typing import Any, Optional
 
 import torch
@@ -8,45 +6,23 @@ from hydrodl2.core.calc import change_param_range, trim_warmup
 
 
 class BasePhysicsModel(torch.nn.Module):
-    """Common scaffolding for HydroDL2 process-based models.
+    """Common code for hydrodl2-based models.
 
-    Subclasses keep their own ``__init__`` and only need to call
-    ``super().__init__()``. Everything here reads attributes the subclass
-    sets, so there is no fixed constructor signature to conform to.
+    Subclasses keep their own `__init__` and should set their own
+    1. state_names
+    2. nmul
+    3. device
+    4. warmup
+    5. warmup_states
+    6. parameter_bounds
+    7. routing_parameter_bounds
 
-    The forward contract
-    --------------------
-    ``forward(x_dict, parameters)`` returns a dict of model outputs whose
-    time-major entries cover exactly ``nsteps - self.warmup`` timesteps.
-    Warm-up is stripped *inside the model*, never by the caller. Two
-    strategies satisfy this and both are supported:
-
-    - ``warmup_states=True``: simulate the warm-up window separately under
-      ``torch.no_grad()`` to spin up storages, then run the remaining window.
-      The warm-up steps never enter the outputs, so nothing needs trimming.
-    - ``warmup_states=False``: simulate the whole window, then drop the
-      leading ``self.warmup`` steps with :meth:`trim_warmup` before returning.
-
-    Whichever is used, a caller can rely on the returned length. Models that
-    do not implement a separate spin-up pass should always take the second
-    path and say so in their class docstring.
-
-    Attributes a subclass is expected to set
-    ---------------------------------------
-    state_names
-        Names of the internal storages, in the order ``_PBM`` returns them.
-    nmul
-        Number of parallel model instances per basin.
-    device
-        Device the model runs on.
-    warmup, warmup_states
-        Warm-up length and strategy, described above.
-    parameter_bounds, routing_parameter_bounds
-        Physical and routing parameter ranges, as ``{name: [lower, upper]}``.
+    Forward: returns a timeseries dict (nsteps - warmup); warmup is stripped
+    inside the model -- either simulate it separately (warmup_states=True) or
+    run the full time window and drop the lead.
     """
 
-    #: Value every internal storage is initialized to. Zero is avoided so
-    #: that divisions and powers taken on a fresh storage stay finite.
+    #: Nonzero initial states for safe powers/divisions.
     initial_state_value: float = 0.001
 
     def __init__(self) -> None:
@@ -54,54 +30,17 @@ class BasePhysicsModel(torch.nn.Module):
         self.states: Optional[tuple[torch.Tensor, ...]] = None
         self._state_cache: Optional[tuple[torch.Tensor, ...]] = None
 
-    # ------------------------------------------------------------------ #
-    #  Warm-up                                                           #
-    # ------------------------------------------------------------------ #
-    def _resolve_warmup(self) -> tuple[int, int]:
-        """Resolve the warm-up strategy into concrete step counts.
-
-        Returns
-        -------
-        tuple[int, int]
-            ``(spinup_steps, pred_cutoff)``. ``spinup_steps`` is how many
-            leading steps to simulate separately before the scored window;
-            ``pred_cutoff`` is how many leading steps to drop from the
-            outputs afterwards. Exactly one of them is non-zero.
-        """
-        if getattr(self, 'warmup_states', True):
-            return self.warmup, 0
-        return 0, self.warmup
-
     @staticmethod
     def trim_warmup(
         outputs: dict[str, torch.Tensor],
         pred_cutoff: int,
         nsteps: int,
     ) -> dict[str, torch.Tensor]:
-        """Drop ``pred_cutoff`` leading steps from every time-major output.
-
-        Outputs that have already collapsed the time axis (a baseflow index
-        summed over time, say) are passed through untouched, so subclasses do
-        not have to maintain a list of exceptions.
-        """
+        """Drop `pred_cutoff` leading steps from timeseries outputs."""
         return trim_warmup(outputs, pred_cutoff, nsteps)
 
-    # ------------------------------------------------------------------ #
-    #  Internal states                                                   #
-    # ------------------------------------------------------------------ #
     def _init_states(self, ngrid: int) -> tuple[torch.Tensor, ...]:
-        """Initialize every internal storage to :attr:`initial_state_value`.
-
-        Parameters
-        ----------
-        ngrid
-            Number of basins/catchments in the batch.
-
-        Returns
-        -------
-        tuple[torch.Tensor, ...]
-            One ``[ngrid, nmul]`` tensor per entry in ``state_names``.
-        """
+        """One [ngrid, nmul] tensor per state with initial_state_value."""
 
         def make_state():
             return torch.full(
@@ -114,53 +53,39 @@ class BasePhysicsModel(torch.nn.Module):
         return tuple(make_state() for _ in range(len(self.state_names)))
 
     def get_states(self) -> Optional[tuple[torch.Tensor, ...]]:
-        """Return the internal states cached by the last forward pass.
-
-        Returns
-        -------
-        tuple[torch.Tensor, ...] or None
-            One tensor per entry in ``state_names``, or ``None`` if the model
-            has not been run yet.
-        """
+        """States cached by the last forward pass, or None if no yet run."""
         return self._state_cache
 
     def load_states(self, states: tuple[torch.Tensor, ...]) -> None:
-        """Load internal states, moved to the model's device and dtype.
-
-        Parameters
-        ----------
-        states
-            One tensor per entry in ``state_names``.
-        """
+        """Load states into the model."""
         for state in states:
             if not isinstance(state, torch.Tensor):
-                raise ValueError("Each element in `states` must be a tensor.")
+                raise ValueError("Each element in states must be a tensor.")
         nstates = len(self.state_names)
         if not (isinstance(states, tuple) and len(states) == nstates):
-            raise ValueError(f"`states` must be a tuple of {nstates} tensors.")
+            raise ValueError(f"States must be a tuple of {nstates} tensors.")
 
         self.states = tuple(
             s.detach().to(self.device, dtype=torch.float32) for s in states
         )
 
-    # ------------------------------------------------------------------ #
-    #  Parameter descaling                                               #
-    # ------------------------------------------------------------------ #
     def _descale_route_parameters(
         self,
         routing_params: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         """Map normalized routing parameters onto their physical ranges.
+        
+        Shape: [ngrid, n_route, nmul]
 
         Parameters
         ----------
         routing_params
-            Normalized routing parameters, ``[ngrid, n_routing]``.
-
+            Normalized routing parameters.
+        
         Returns
         -------
-        dict[str, torch.Tensor]
-            Descaled routing parameters keyed by name.
+        dict
+            Dictionary of descaled routing parameters.
         """
         parameter_dict = {}
         for i, name in enumerate(self.routing_parameter_bounds.keys()):
@@ -175,19 +100,21 @@ class BasePhysicsModel(torch.nn.Module):
         phy_dy_params: torch.Tensor,
         dy_list: list[str],
     ) -> dict[str, torch.Tensor]:
-        """Descale the time-varying physical parameters.
-
-        Split from the static parameters on purpose: only these carry a time
-        axis, so the network emitting them can be much narrower. Keeping the
-        static ones out of this tensor is what lets distributed models run on
-        large catchment counts.
+        """Descale the time-dynamic physical parameters.
+        
+        Shape: [nsteps, ngrid, n_dynamic, nmul]
 
         Parameters
         ----------
         phy_dy_params
-            Normalized dynamic parameters, ``[nsteps, ngrid, n_dynamic, nmul]``.
+            Normalized dynamic physical parameters.
         dy_list
-            Names of the dynamic parameters, in channel order.
+            List of dynamic parameters.
+
+        Returns
+        -------
+        dict
+            Dictionary of descaled physical parameters.
         """
         raise NotImplementedError
 
@@ -197,24 +124,38 @@ class BasePhysicsModel(torch.nn.Module):
         stat_list: list[str],
     ) -> dict[str, torch.Tensor]:
         """Descale the time-invariant physical parameters.
+        
+        Shape: [ngrid, n_static, nmul]
 
         Parameters
         ----------
         phy_stat_params
-            Normalized static parameters, ``[ngrid, n_static, nmul]`` — note
-            the absence of a time axis.
-        stat_list
-            Names of the static parameters, in channel order.
+            Normalized static physical parameters.
+
+        Returns
+        -------
+        dict
+            Dictionary of descaled static physical parameters.
         """
         raise NotImplementedError
 
-    # ------------------------------------------------------------------ #
-    #  Required of every model                                           #
-    # ------------------------------------------------------------------ #
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
         parameters: Any,
     ) -> dict[str, torch.Tensor]:
-        """Run the model. See the class docstring for the return contract."""
+        """Forward pass.
+        
+        Parameters
+        ----------
+        x_dict
+            Dictionary of input forcing data.
+        parameters
+            Unprocessed, learned parameters from a neural network.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Dictionary of model outputs.
+        """
         raise NotImplementedError

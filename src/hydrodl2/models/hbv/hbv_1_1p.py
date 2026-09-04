@@ -240,8 +240,7 @@ class Hbv_1_1p(BasePhysicsModel):
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
         for i, name in enumerate(self.parameter_bounds.keys()):
-            # expand() shares memory with the source row; repeat() would
-            # materialise a full [nsteps, ngrid, nmul] copy per static parameter.
+            # NOTE:expand() instead of repeat() saves mem
             staPar = phy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
             if name in dy_list:
                 dynPar = phy_params[:, :, i, :]
@@ -262,7 +261,7 @@ class Hbv_1_1p(BasePhysicsModel):
         self,
         x_dict: dict[str, torch.Tensor],
         parameters: torch.Tensor,
-    ) -> Union[tuple, tuple[dict[str, torch.Tensor], tuple]]:
+    ) -> dict[str, torch.Tensor]:
         """Forward pass.
 
         Parameters
@@ -274,8 +273,8 @@ class Hbv_1_1p(BasePhysicsModel):
 
         Returns
         -------
-        Union[tuple, tuple[dict, tuple]]
-            Tuple or dictionary of model outputs.
+        dict[str, torch.Tensor]
+            Dictionary of model outputs.
         """
         # Unpack input data.
         x = x_dict['x_phy']
@@ -289,13 +288,12 @@ class Hbv_1_1p(BasePhysicsModel):
 
         # Initialization
         if self.warmup_states:
-            # Spin up states on the warm-up window separately (no gradients);
-            # the simulation window handed to _PBM already excludes it.
+            # Spin up states on the warmup window separately (no gradients)
             warmup = self.warmup
             pred_cutoff = 0
         else:
-            # No state warm up: run the full model for warmup days, then drop
-            # those days from the outputs below.
+            # No state warmup: run the full model for warmup days, then drop
+            # those days from the outputs.
             warmup = 0
             pred_cutoff = self.warmup
 
@@ -304,17 +302,17 @@ class Hbv_1_1p(BasePhysicsModel):
         else:
             current_states = self.states
 
-        # Warm-up model states - run the model only on warmup days first.
+        # Warmup model states - run the model only on warmup days first.
         if warmup > 0:
             with torch.no_grad():
                 phy_param_warmup_dict = self._descale_phy_parameters(
                     phy_params[:warmup, :, :],
                     dy_list=self.dynamic_params,
                 )
-                # a. Save current model settings.
+                # 1. Save current model settings
                 init_flag, route_flag = self.initialize, self.routing
 
-                # b. Set temporary model settings for warm-up.
+                # 2. Set temporary model settings for warmup
                 self.initialize, self.routing = True, False
 
                 current_states = self._PBM(
@@ -323,19 +321,17 @@ class Hbv_1_1p(BasePhysicsModel):
                     phy_param_warmup_dict,
                 )
 
-                # c. Restore model settings.
+                # 3. Restore model settings
                 self.initialize, self.routing = init_flag, route_flag
 
-        # Run the model for remainder of the simulation period.
+        # Run the model for remainder of sim period.
         phy_params_dict = self._descale_phy_parameters(
             phy_params[warmup:, :, :],
             dy_list=self.dynamic_params,
         )
         fluxes, states = self._PBM(x[warmup:, :, :], current_states, phy_params_dict)
 
-        # Drop the warm-up period here, at the model boundary, so that forward()
-        # always returns exactly `nsteps - self.warmup` timesteps no matter which
-        # warm-up strategy was used. Time-collapsed outputs (e.g. BFI) pass through.
+        # Drop warmup period
         fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0] - warmup)
 
         # State caching
@@ -378,9 +374,10 @@ class Hbv_1_1p(BasePhysicsModel):
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
-        Pm = P.unsqueeze(2).repeat(1, 1, self.nmul)
-        Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
-        PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
+        # NOTE:expand() instead of repeat() saves mem (don't do inplace writes)
+        Pm = P.unsqueeze(2).expand(-1, -1, self.nmul)
+        Tm = T.unsqueeze(2).expand(-1, -1, self.nmul)
+        PETm = PET.unsqueeze(-1).expand(-1, -1, self.nmul)
 
         # Apply correction factor to precipitation
         # P = parPCORR.repeat(nsteps, 1) * P
@@ -549,7 +546,7 @@ class Hbv_1_1p(BasePhysicsModel):
                 .unsqueeze(-1),
                 lenF=self.routing_len,
             )
-            rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
+            rf = torch.unsqueeze(Qsim_in, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
             Qsrout_full = uh_conv(rf, UH).permute([2, 0, 1])
 

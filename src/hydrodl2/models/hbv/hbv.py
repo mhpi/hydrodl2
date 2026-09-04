@@ -56,6 +56,9 @@ class Hbv(BasePhysicsModel):
         self.device = device
 
         self.states, self._state_cache = None, None
+        self.routing_len = 15
+        self.routing_state = None
+        self._routing_state_cache = None
 
         self.state_names = [
             'SNOWPACK',  # Snowpack storage
@@ -123,6 +126,46 @@ class Hbv(BasePhysicsModel):
             if 'parBETAET' in self.dynamic_params:
                 self.parameter_bounds['parBETAET'] = [0.3, 5]
         self._set_parameters()
+
+    def get_routing_state(self) -> Optional[dict[str, torch.Tensor]]:
+        """Return cached routing carryover needed for restart.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            A dictionary containing the routing carryover states (Qsim_tail, Q0_tail, Q1_tail, Q2_tail).
+        """
+        return self._routing_state_cache
+
+    def load_routing_state(
+        self,
+        routing_state: Optional[dict[str, torch.Tensor]],
+    ) -> None:
+        """Load routing carryover for restart.
+
+        Parameters
+        ----------
+        routing_state
+            A dictionary containing the routing carryover states (Qsim_tail, Q0_tail, Q1_tail, Q2_tail).
+        """
+        if routing_state is None:
+            self.routing_state = None
+            return
+
+        if not isinstance(routing_state, dict):
+            raise ValueError("`routing_state` must be a dict or None.")
+
+        required = ("Qsim_tail", "Q0_tail", "Q1_tail", "Q2_tail")
+        for key in required:
+            if key not in routing_state:
+                raise ValueError(f"Missing routing state key: {key}")
+            if not isinstance(routing_state[key], torch.Tensor):
+                raise ValueError(f"Routing state `{key}` must be a tensor.")
+
+        self.routing_state = {
+            key: routing_state[key].detach().to(self.device, dtype=torch.float32)
+            for key in required
+        }
 
     def _set_parameters(self) -> None:
         """Get physical parameters."""
@@ -196,8 +239,7 @@ class Hbv(BasePhysicsModel):
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
         for i, name in enumerate(self.parameter_bounds.keys()):
-            # expand() shares memory with the source row; repeat() would
-            # materialise a full [nsteps, ngrid, nmul] copy per static parameter.
+            # NOTE:expand() instead of repeat() saves mem
             staPar = phy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
             if name in dy_list:
                 dynPar = phy_params[:, :, i, :]
@@ -218,7 +260,7 @@ class Hbv(BasePhysicsModel):
         self,
         x_dict: dict[str, torch.Tensor],
         parameters: torch.Tensor,
-    ) -> Union[tuple, tuple[dict[str, torch.Tensor], tuple]]:
+    ) -> dict[str, torch.Tensor]:
         """Forward pass.
 
         Parameters
@@ -230,8 +272,8 @@ class Hbv(BasePhysicsModel):
 
         Returns
         -------
-        Union[tuple, tuple[dict, tuple]]
-            Tuple or dictionary of model outputs.
+        dict[str, torch.Tensor]
+            Dictionary of model outputs.
         """
         # Unpack input data.
         x = x_dict['x_phy']
@@ -245,13 +287,12 @@ class Hbv(BasePhysicsModel):
 
         # Initialization
         if self.warmup_states:
-            # Spin up states on the warm-up window separately (no gradients);
-            # the simulation window handed to _PBM already excludes it.
+            # Spin up states on the warmup window separately (no gradients)
             warmup = self.warmup
             pred_cutoff = 0
         else:
-            # No state warm up: run the full model for warmup days, then drop
-            # those days from the outputs below.
+            # No state warmup: run the full model for warmup days, then drop
+            # those days from the outputs.
             warmup = 0
             pred_cutoff = self.warmup
 
@@ -260,17 +301,17 @@ class Hbv(BasePhysicsModel):
         else:
             current_states = self.states
 
-        # Warm-up model states - run the model only on warmup days first.
+        # Warmup model states - run the model only on warmup days first.
         if warmup > 0:
             with torch.no_grad():
                 phy_param_warmup_dict = self._descale_phy_parameters(
                     phy_params[:warmup, :, :],
                     dy_list=[],
                 )
-                # a. Save current model settings.
+                # 1. Save current model settings
                 init_flag, route_flag = self.initialize, self.routing
 
-                # b. Set temporary model settings for warm-up.
+                # 2. Set temporary model settings for warmup
                 self.initialize, self.routing = True, False
 
                 current_states = self._PBM(
@@ -279,26 +320,25 @@ class Hbv(BasePhysicsModel):
                     phy_param_warmup_dict,
                 )
 
-                # c. Restore model settings.
+                # 3. Restore model settings
                 self.initialize, self.routing = init_flag, route_flag
 
-        # Run the model for remainder of the simulation period.
+        # Run the model for remainder of sim period.
         phy_params_dict = self._descale_phy_parameters(
             phy_params[warmup:, :, :],
             dy_list=self.dynamic_params,
         )
         fluxes, states = self._PBM(x[warmup:, :, :], current_states, phy_params_dict)
 
-        # Drop the warm-up period here, at the model boundary, so that forward()
-        # always returns exactly `nsteps - self.warmup` timesteps no matter which
-        # warm-up strategy was used. Time-collapsed outputs (e.g. BFI) pass through.
+        # Drop warmup period
         fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0] - warmup)
 
         # State caching
-        self._state_cache = [s.detach() for s in states]
+        self._state_cache = tuple(s.detach() for s in states)
 
         if self.cache_states:
             self.states = self._state_cache
+            self.routing_state = self._routing_state_cache
 
         return fluxes
 
@@ -333,9 +373,10 @@ class Hbv(BasePhysicsModel):
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
-        Pm = P.unsqueeze(2).repeat(1, 1, self.nmul)
-        Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
-        PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
+        # NOTE:expand() instead of repeat() saves mem (don't do inplace writes)
+        Pm = P.unsqueeze(2).expand(-1, -1, self.nmul)
+        Tm = T.unsqueeze(2).expand(-1, -1, self.nmul)
+        PETm = PET.unsqueeze(-1).expand(-1, -1, self.nmul)
 
         # Apply correction factor to precipitation
         # P = parPCORR.repeat(nsteps, 1) * P
@@ -352,7 +393,6 @@ class Hbv(BasePhysicsModel):
             torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
         )
 
-        # AET = PET_coef * PET
         AET = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         recharge_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
@@ -454,6 +494,8 @@ class Hbv(BasePhysicsModel):
 
         # Run routing
         if self.routing:
+            tail_len = self.routing_len - 1
+
             # Routing for all components or just the average.
             if self.comprout:
                 # All components; reshape to [time, gages * num models]
@@ -462,25 +504,55 @@ class Hbv(BasePhysicsModel):
                 # Average, then do routing.
                 Qsim = Qsimavg
 
+            # Prepare unrouted component series used for routing restart
+            Q0_base = Q0_sim.mean(-1)  # [time, gages]
+            Q1_base = Q1_sim.mean(-1)  # [time, gages]
+            Q2_base = Q2_sim.mean(-1)  # [time, gages]
+
+            # Prepend saved routing carryover if present
+            if self.routing_state is not None:
+                Qsim_in = torch.cat([self.routing_state["Qsim_tail"], Qsim], dim=0)
+                Q0_in = torch.cat([self.routing_state["Q0_tail"], Q0_base], dim=0)
+                Q1_in = torch.cat([self.routing_state["Q1_tail"], Q1_base], dim=0)
+                Q2_in = torch.cat([self.routing_state["Q2_tail"], Q2_base], dim=0)
+            else:
+                Qsim_in = Qsim
+                Q0_in = Q0_base
+                Q1_in = Q1_base
+                Q2_in = Q2_base
+
+            nsteps_route = Qsim_in.shape[0]
+
             UH = uh_gamma(
-                self.routing_param_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
-                self.routing_param_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
-                lenF=15,
+                self.routing_param_dict['route_a']
+                .repeat(nsteps_route, 1)
+                .unsqueeze(-1),
+                self.routing_param_dict['route_b']
+                .repeat(nsteps_route, 1)
+                .unsqueeze(-1),
+                lenF=self.routing_len,
             )
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
-            Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
+            Qsrout_full = uh_conv(rf, UH).permute([2, 0, 1])
+
+            Qsrout = Qsrout_full[-nsteps:, :, :]
 
             # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
-            rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
-            rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
-            rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+            rf_Q0 = torch.unsqueeze(Q0_in, -1).permute([1, 2, 0])
+            Q0_rout_full = uh_conv(rf_Q0, UH).permute([2, 0, 1])
+            Q0_rout = Q0_rout_full[-nsteps:, :, :]
+
+            rf_Q1 = torch.unsqueeze(Q1_in, -1).permute([1, 2, 0])
+            Q1_rout_full = uh_conv(rf_Q1, UH).permute([2, 0, 1])
+            Q1_rout = Q1_rout_full[-nsteps:, :, :]
+
+            rf_Q2 = torch.unsqueeze(Q2_in, -1).permute([1, 2, 0])
+            Q2_rout_full = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+            Q2_rout = Q2_rout_full[-nsteps:, :, :]
 
             if self.comprout:
-                # Qs is now shape [time, [gages*num models], vars]
+                # Qs is now shape [time, gages, 1] after averaging models.
                 Qstemp = Qsrout.view(nsteps, ngrid, self.nmul)
                 if self.muwts is None:
                     Qs = Qstemp.mean(-1, keepdim=True)
@@ -489,10 +561,22 @@ class Hbv(BasePhysicsModel):
             else:
                 Qs = Qsrout
 
+            # Cache routing carryover for restart
+            if tail_len > 0:
+                self._routing_state_cache = {
+                    "Qsim_tail": Qsim_in[-tail_len:].detach(),
+                    "Q0_tail": Q0_in[-tail_len:].detach(),
+                    "Q1_tail": Q1_in[-tail_len:].detach(),
+                    "Q2_tail": Q2_in[-tail_len:].detach(),
+                }
+            else:
+                self._routing_state_cache = None
+
         else:
             # No routing, only output the average of all model sims.
             Qs = torch.unsqueeze(Qsimavg, -1)
             Q0_rout = Q1_rout = Q2_rout = None
+            self._routing_state_cache = None
 
         states = (SNOWPACK, MELTWATER, SM, SUZ, SLZ)
 

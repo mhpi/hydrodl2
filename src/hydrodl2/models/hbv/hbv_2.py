@@ -140,6 +140,13 @@ class Hbv_2(BasePhysicsModel):
     def _set_parameters(self) -> None:
         """Get physical parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
+
+        # Canonicalize to HBV param order regardless of how the user lists
+        # them in config, so NN output channels map to param names consistently.
+        self.dynamic_params = [
+            name for name in self.phy_param_names if name in self.dynamic_params
+        ]
+
         if self.routing:
             self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
@@ -200,7 +207,7 @@ class Hbv_2(BasePhysicsModel):
         phy_dy_params: torch.Tensor,
         dy_list: list,
     ) -> dict[str, torch.Tensor]:
-        """Descale physical parameters.
+        """Descale time-dynamic physical parameters.
 
         Parameters
         ----------
@@ -217,22 +224,20 @@ class Hbv_2(BasePhysicsModel):
         nsteps = phy_dy_params.shape[0]
         ngrid = phy_dy_params.shape[1]
 
-        # TODO: Fix; if dynamic parameters are not entered in config as they are
-        # in HBV params list, then descaling misamtch will occur.
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
         for i, name in enumerate(dy_list):
             dynPar = phy_dy_params[:, :, i, :]
 
             if self.dy_drop > 0.0:
-                # expand() instead of repeat() saves mem
+                # NOTE: expand() instead of repeat() saves mem
                 staPar = phy_dy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
                 drmask = torch.bernoulli(pmat).detach_().to(self.device)
                 comPar = dynPar * (1 - drmask) + staPar * drmask
             else:
                 # When dy_drop=0, staPar is never used, so skip
                 comPar = dynPar
-            
+
             param_dict[name] = change_param_range(
                 param=comPar,
                 bounds=self.parameter_bounds[name],
@@ -243,18 +248,18 @@ class Hbv_2(BasePhysicsModel):
         self,
         phy_stat_params: torch.Tensor,
         stat_list: list,
-    ) -> torch.Tensor:
-        """Descale routing parameters.
+    ) -> dict[str, torch.Tensor]:
+        """Descale time-invariant physical parameters.
 
         Parameters
         ----------
-        routing_params
-            Normalized routing parameters.
+        phy_stat_params
+            Normalized static physical parameters.
 
         Returns
         -------
         dict
-            Dictionary of descaled routing parameters.
+            Dictionary of descaled static physical parameters.
         """
         parameter_dict = {}
         for i, name in enumerate(stat_list):
@@ -296,7 +301,7 @@ class Hbv_2(BasePhysicsModel):
         agg_info = None
         if self.gage_agg and 'areas' in x_dict and 'outlet_topo' in x_dict:
             agg_info = (x_dict['areas'], x_dict['outlet_topo'])
-        
+
         # Unpack parameters.
         phy_dy_params, phy_static_params, routing_params = self._unpack_parameters(
             parameters
@@ -322,9 +327,6 @@ class Hbv_2(BasePhysicsModel):
         else:
             current_states = self.states
 
-        # Hbv_2 has no separate no-grad spin-up pass: the full window is always
-        # simulated and the warm-up days are dropped from the outputs below.
-        # `warmup_states` therefore has no effect on this model.
         pred_cutoff = self.warmup
 
         fluxes, states = self._PBM(
@@ -337,9 +339,7 @@ class Hbv_2(BasePhysicsModel):
             agg_info=agg_info,
         )
 
-        # Drop the warm-up period here, at the model boundary, so that forward()
-        # always returns exactly `nsteps - self.warmup` timesteps. Time-collapsed
-        # outputs (e.g. BFI) pass through untouched.
+        # Drop warmup period
         fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0])
 
         # State caching
@@ -387,7 +387,7 @@ class Hbv_2(BasePhysicsModel):
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
-        # NOTE: expand() shares mem with the source tensor. Use instead of repeat() to save mem.
+        # NOTE:expand() instead of repeat() saves mem (don't do inplace writes)
         Pm = P.unsqueeze(2).expand(-1, -1, self.nmul)
         Tm = T.unsqueeze(2).expand(-1, -1, self.nmul)
         PETm = PET.unsqueeze(-1).expand(-1, -1, self.nmul)
@@ -440,7 +440,7 @@ class Hbv_2(BasePhysicsModel):
                 )
                 + 0.001
             )
-        
+
         if self.all_output:
             Q0_sim = (
                 torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
@@ -472,9 +472,9 @@ class Hbv_2(BasePhysicsModel):
             MELTWATER_sim = torch.zeros(
                 Pm.size(), dtype=torch.float32, device=self.device
             )
-        SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
         param_dict = {}
         for t in range(nsteps):
@@ -581,7 +581,7 @@ class Hbv_2(BasePhysicsModel):
             else:
                 Qsimmu[t, :, :] = Q0 + Q1 + Q2
                 AET[t, :, :] = ETact
-            
+
             if self.all_output:
                 Q0_sim[t, :, :] = Q0
                 Q1_sim[t, :, :] = Q1
@@ -680,7 +680,6 @@ class Hbv_2(BasePhysicsModel):
             states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
         else:
             states = None
-
 
         if not self.all_output:
             # Compact output: only streamflow and ET
