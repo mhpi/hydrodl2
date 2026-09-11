@@ -56,7 +56,9 @@ class Hbv_2(BasePhysicsModel):
         self.nmul = 1
         self.cache_states = False
         self.all_output = True  # Flag to output all vars.
-        self.elev_parTT = False  # Override parTT=4.0 for elevations >= 2000m.
+        self.elev_parTT = (
+            True  # Override parTT=4.0 for elevations >= 2000m (reference behavior).
+        )
         self.gage_agg = (
             False  # Aggregate Q to gage level inside HBV loop (reference behavior).
         )

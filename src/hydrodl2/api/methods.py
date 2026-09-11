@@ -114,29 +114,49 @@ def load_model(model: str, ver_name: str = None) -> Module:
     except ImportError as e:
         raise ImportError(f"Model '{model}' not found.") from e
 
+    # Classes defined directly in this module (excludes imported classes like
+    # BasePhysicsModel or, for files like hbv_2_mts.py, other Hbv variants).
+    local_classes = {
+        attr: getattr(module, attr)
+        for attr in dir(module)
+        if isinstance(getattr(module, attr), type)
+        and getattr(module, attr).__module__ == module.__name__
+    }
+
     # Retrieve version name if possible, otherwise get first class in module
     try:
         cls = getattr(module, ver_name)
     except AttributeError:
-        # Try PascalCase conversion (e.g., Prms_Gw0_Triton -> PrmsGw0Triton)
-        pascal_name = ''.join(w.title() for w in ver_name.split('_'))
-        try:
-            cls = getattr(module, pascal_name)
-        except AttributeError as e:
-            # Find first class in module (NOTE: not guaranteed accurate)
-            classes = [
-                attr
-                for attr in dir(module)
-                if isinstance(getattr(module, attr), type) and attr != 'Any'
-            ]
-            if not classes:
-                raise ImportError(f"Model version '{model}' not found.") from e
+        # Try case-insensitive match (e.g., hbv_2_hourly -> Hbv_2_hourly)
+        ci_matches = [
+            name for name in local_classes if name.lower() == ver_name.lower()
+        ]
+        if ci_matches:
+            cls = local_classes[ci_matches[0]]
+        else:
+            # Try PascalCase conversion (e.g., Prms_Gw0_Triton -> PrmsGw0Triton)
+            pascal_name = ''.join(w.title() for w in ver_name.split('_'))
+            try:
+                cls = getattr(module, pascal_name)
+            except AttributeError as e:
+                # Find first locally-defined class in module (NOTE: not guaranteed
+                # accurate). Prefer local_classes over dir(module) so that classes
+                # merely imported for use by the module's own class(es) - e.g.
+                # BasePhysicsModel, or Hbv_2/Hbv_2_hourly imported into
+                # hbv_2_mts.py - are never picked over the module's own class.
+                classes = sorted(local_classes) or [
+                    attr
+                    for attr in dir(module)
+                    if isinstance(getattr(module, attr), type) and attr != 'Any'
+                ]
+                if not classes:
+                    raise ImportError(f"Model version '{model}' not found.") from e
 
-            log.warning(
-                f"Model class '{ver_name}' not found in module '{module.__file__}'. "
-                f"Falling back to the first available: '{classes[0]}'."
-            )
-            cls = getattr(module, classes[0])
+                log.warning(
+                    f"Model class '{ver_name}' not found in module '{module.__file__}'. "
+                    f"Falling back to the first available: '{classes[0]}'."
+                )
+                cls = getattr(module, classes[0])
 
     return cls
 

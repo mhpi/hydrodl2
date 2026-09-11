@@ -137,3 +137,43 @@ class TestModelStructure:
         config = _hbv_config_dict(dynamic_params=['parBETA'], nmul=2)
         model = Hbv(config, device=DEVICE)
         assert model.learnable_param_count == 26
+
+    @pytest.mark.parametrize(
+        "model_name, expected_class_name",
+        [
+            ('hbv', 'Hbv'),
+            ('hbv_1_1p', 'Hbv_1_1p'),
+            ('hbv_2', 'Hbv_2'),
+            ('hbv_2_hourly', 'Hbv_2_hourly'),
+            ('hbv_2_mts', 'Hbv_2_mts'),
+            # hbv_adj is intentionally excluded: load_model('hbv_adj') is
+            # currently broken in both hydrodl2_master and hydrodl2_new
+            # (ModuleNotFoundError: hydrodl2.core.calc.batch_jacobian is
+            # missing from both repos) - a pre-existing, unrelated issue.
+        ],
+    )
+    def test_load_model_resolves_correct_class(self, model_name, expected_class_name):
+        """load_model(name) with no explicit ver_name must resolve to that
+        model's own class, not fall back to an unrelated class merely
+        imported into the same module (e.g. BasePhysicsModel, or another
+        Hbv variant imported for composition, as in hbv_2_mts.py).
+        """
+        Cls = load_model(model_name)
+        assert Cls.__name__ == expected_class_name, (
+            f"load_model({model_name!r}) resolved to '{Cls.__name__}', "
+            f"expected '{expected_class_name}'"
+        )
+
+    def test_hbv2_default_flags_match_reference_behavior(self):
+        """Hbv_2's opt-in flags must default to reproducing the original
+        (pre-refactor) unconditional reference behavior, so that existing
+        callers that don't set these keys see no change.
+        """
+        Hbv_2 = load_model('hbv_2')
+        model = Hbv_2(device=DEVICE)
+        assert model.elev_parTT is True, (
+            "elev_parTT must default to True: the original model always "
+            "applied the elevation-based parTT override (T>=2000m -> parTT=4.0)."
+        )
+        assert model.gage_agg is False
+        assert model.all_output is True
