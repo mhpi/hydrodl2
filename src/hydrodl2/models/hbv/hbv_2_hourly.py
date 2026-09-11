@@ -593,7 +593,7 @@ class Hbv_2_hourly(BasePhysicsModel):
             ) * param_dict['parRT'] * (Ac < 2500) + torch.exp(
                 torch.clamp(-(Ac - 2500) / 50, min=-10.0, max=0.0)
             ) * param_dict['parRT'] * (Ac >= 2500)
-            SLZ = torch.clamp(SLZ + LF * dt, min=0.0)
+            SLZ = torch.clamp(SLZ + LF * dt, min=self.nearzero)
 
             Q2 = param_dict['parK2'] * SLZ
             SLZ = SLZ - Q2 * dt
