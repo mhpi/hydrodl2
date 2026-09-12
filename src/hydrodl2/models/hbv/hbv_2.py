@@ -2,10 +2,11 @@ from typing import Any, Optional, Union
 
 import torch
 
-from hydrodl2.core.calc import change_param_range, uh_conv, uh_gamma
+from hydrodl2.core.calc import change_param_range, trim_warmup, uh_conv, uh_gamma
+from hydrodl2.models.base import BasePhysicsModel
 
 
-class Hbv_2(torch.nn.Module):
+class Hbv_2(BasePhysicsModel):
     """HBV 2.0.
 
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
@@ -32,6 +33,58 @@ class Hbv_2(torch.nn.Module):
         Configuration dictionary.
     device
         Device to run the model on.
+
+    Model Detail
+    ------------
+    * Variables (Inputs)
+        1) prcp -- Precipitation (mm/d).
+        2) tmean -- Mean air temperature (C).
+        3) pet -- Potential evapotranspiration (mm/d).
+
+    * Parameterization (Inputs)
+        1) parBETA -- Soil moisture shape parameter.
+        2) parFC -- Field capacity of the soil (mm).
+        3) parK0 -- Upper zone quick flow response factor.
+        4) parK1 -- Upper zone slow flow response factor.
+        5) parK2 -- Lower zone slow flow response factor.
+        6) parLP -- Threshold for soil moisture to start evapotranspiration.
+        7) parPERC -- Percolation from upper to lower groundwater zone.
+        8) parUZL -- Upper groundwater storage threshold for quick flow.
+        9) parTT -- Threshold temperature for snow/rain separation (C).
+        10) parCFMAX -- Degree-day factor for snowmelt (mm/C/day).
+        11) parCFR -- Refreezing factor for snowmelt.
+        12) parCWH -- Water holding capacity of snowpack.
+        13) parBETAET -- Soil moisture shape parameter for evapotranspiration.
+        14) parC -- Capillary rise factor.
+        15) parRT -- Recession time factor for lower groundwater zone.
+        16) parAC -- Area correction factor for lower groundwater zone.
+
+    * States (Outputs)
+        1) SNOWPACK -- Snowpack storage (mm).
+        2) MELTWATER -- Meltwater storage (mm).
+        3) SM -- Soil moisture storage (mm).
+        4) SUZ -- Upper groundwater storage (mm).
+        5) SLZ -- Lower groundwater storage (mm).
+
+    * Fluxes/Outputs
+        1) streamflow -- Routed streamflow (mm/d).
+        2) srflow -- Routed surface runoff (mm/d).
+        3) ssflow -- Routed subsurface flow (mm/d).
+        4) gwflow -- Routed groundwater flow (mm/d).
+        5) AET_hydro -- Actual evapotranspiration (mm/d).
+        6) PET_hydro -- Potential evapotranspiration (mm/d).
+        7) streamflow_no_rout -- Streamflow without routing (mm/d).
+        8) srflow_no_rout -- Surface runoff without routing (mm/d).
+        9) ssflow_no_rout -- Subsurface flow without routing (mm/d).
+        10) gwflow_no_rout -- Groundwater flow without routing (mm/d).
+        11) recharge -- Recharge to lower groundwater zone (mm/d).
+        12) excs -- Excess water from soil moisture storage (mm/d).
+        13) tosoil -- Infiltration to soil moisture storage (mm/d).
+        14) percolation -- Percolation from upper to lower groundwater zone (mm/d).
+        15) capillary -- Capillary rise from lower to upper groundwater zone (mm/d).
+        16) evapfactor -- Evaporation factor for soil moisture.
+        17) SWE -- Snow water equivalent (mm).
+        18) BFI -- Baseflow index (%).
     """
 
     def __init__(
@@ -42,13 +95,10 @@ class Hbv_2(torch.nn.Module):
         super().__init__()
         self.name = 'HBV 2.0'
         self.config = config
-        self.initialize = False
         self.warmup = 0
-        self.pred_cutoff = 0
         self.warmup_states = True
         self.dynamic_params = []
         self.dy_drop = 0.0
-        self.variables = ['prcp', 'tmean', 'pet']
         self.routing = False
         self.lenF = 15
         self.comprout = False
@@ -56,38 +106,18 @@ class Hbv_2(torch.nn.Module):
         self.nearzero = 1e-5
         self.nmul = 1
         self.cache_states = False
+        self.full_output = True  # Flag to output all vars.
+        self.elev_threshold = True  # Use elevation threshold for snow/ice melt.
+        self.gage_agg = False  # Aggregate Q to gage level.
         self.device = device
 
         self.states, self._state_cache = None, None
 
-        self.state_names = [
-            'SNOWPACK',  # Snowpack storage
-            'MELTWATER',  # Meltwater storage
-            'SM',  # Soil moisture storage
-            'SUZ',  # Upper groundwater storage
-            'SLZ',  # Lower groundwater storage
+        self.variables = [
+            'prcp',
+            'tmean',
+            'pet',
         ]
-        self.flux_names = [
-            'streamflow',  # Routed Streamflow
-            'srflow',  # Routed surface runoff
-            'ssflow',  # Routed subsurface flow
-            'gwflow',  # Routed groundwater flow
-            'AET_hydro',  # Actual ET
-            'PET_hydro',  # Potential ET
-            'SWE',  # Snow water equivalent
-            'streamflow_no_rout',  # Streamflow
-            'srflow_no_rout',  # Surface runoff
-            'ssflow_no_rout',  # Subsurface flow
-            'gwflow_no_rout',  # Groundwater flow
-            'recharge',  # Recharge
-            'excs',  # Excess stored water
-            'evapfactor',  # Evaporation factor
-            'tosoil',  # Infiltration
-            'percolation',  # Percolation
-            'capillary',  # Capillary rise
-            'BFI',  # Baseflow index
-        ]
-
         self.parameter_bounds = {
             'parBETA': [1.0, 6.0],
             'parFC': [50, 1000],
@@ -110,6 +140,33 @@ class Hbv_2(torch.nn.Module):
             'route_a': [0, 2.9],
             'route_b': [0, 6.5],
         }
+        self.state_names = [
+            'SNOWPACK',
+            'MELTWATER',
+            'SM',
+            'SUZ',
+            'SLZ',
+        ]
+        self.flux_names = [
+            'streamflow',
+            'srflow',
+            'ssflow',
+            'gwflow',
+            'AET_hydro',
+            'PET_hydro',
+            'streamflow_no_rout',
+            'srflow_no_rout',
+            'ssflow_no_rout',
+            'gwflow_no_rout',
+            'recharge',
+            'excs',
+            'tosoil',
+            'percolation',
+            'capillary',
+            'evapfactor',
+            'SWE',
+            'BFI',
+        ]
 
         if not device:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -128,53 +185,20 @@ class Hbv_2(torch.nn.Module):
             self.nearzero = config.get('nearzero', self.nearzero)
             self.nmul = config.get('nmul', self.nmul)
             self.cache_states = config.get('cache_states', self.cache_states)
+            self.full_output = config.get('full_output', self.full_output)
+            self.elev_threshold = config.get('elev_threshold', self.elev_threshold)
+            self.gage_agg = config.get('gage_agg', self.gage_agg)
         self._set_parameters()
 
-    def _init_states(self, ngrid: int) -> tuple[torch.Tensor]:
-        """Initialize model states to zero."""
-
-        def make_state():
-            return torch.full(
-                (ngrid, self.nmul), 0.001, dtype=torch.float32, device=self.device
-            )
-
-        return tuple(make_state() for _ in range(len(self.state_names)))
-
-    def get_states(self) -> Optional[tuple[torch.Tensor, ...]]:
-        """Return internal model states.
-
-        Returns
-        -------
-        tuple[torch.Tensor, ...]
-            A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
-        """
-        return self._state_cache
-
-    def load_states(
-        self,
-        states: tuple[torch.Tensor, ...],
-    ) -> None:
-        """Load internal model states and set to model device and type.
-
-        Parameters
-        ----------
-        states
-            A tuple containing the states (SNOWPACK, MELTWATER, SM, SUZ, SLZ).
-        """
-        for state in states:
-            if not isinstance(state, torch.Tensor):
-                raise ValueError("Each element in `states` must be a tensor.")
-        nstates = len(self.state_names)
-        if not (isinstance(states, tuple) and len(states) == nstates):
-            raise ValueError(f"`states` must be a tuple of {nstates} tensors.")
-
-        self.states = tuple(
-            s.detach().to(self.device, dtype=torch.float32) for s in states
-        )
-
     def _set_parameters(self) -> None:
-        """Get physical parameters."""
+        """Get model parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
+
+        # Make parameters order-independent
+        self.dynamic_params = [
+            name for name in self.phy_param_names if name in self.dynamic_params
+        ]
+
         if self.routing:
             self.routing_param_names = self.routing_parameter_bounds.keys()
         else:
@@ -208,7 +232,7 @@ class Hbv_2(torch.nn.Module):
         dy_param_count = len(self.dynamic_params)
         dif_count = phy_param_count - dy_param_count
 
-        # Physical dynamic parameters
+        # Dynamic parameters
         phy_dy_params = parameters[0].view(
             parameters[0].shape[0],
             parameters[0].shape[1],
@@ -216,7 +240,7 @@ class Hbv_2(torch.nn.Module):
             self.nmul,
         )
 
-        # Physical static parameters
+        # Static parameters
         phy_static_params = parameters[1][:, : dif_count * self.nmul].view(
             parameters[1].shape[0],
             dif_count,
@@ -235,34 +259,37 @@ class Hbv_2(torch.nn.Module):
         phy_dy_params: torch.Tensor,
         dy_list: list,
     ) -> dict[str, torch.Tensor]:
-        """Descale physical parameters.
+        """Descale time-dynamic model parameters.
 
         Parameters
         ----------
-        phy_params
-            Normalized physical parameters.
+        phy_dy_params
+            Normalized model parameters.
         dy_list
             List of dynamic parameters.
 
         Returns
         -------
         dict
-            Dictionary of descaled physical parameters.
+            Dictionary of descaled model parameters.
         """
         nsteps = phy_dy_params.shape[0]
         ngrid = phy_dy_params.shape[1]
 
-        # TODO: Fix; if dynamic parameters are not entered in config as they are
-        # in HBV params list, then descaling misamtch will occur.
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
         for i, name in enumerate(dy_list):
-            staPar = phy_dy_params[-1, :, i, :].unsqueeze(0).repeat([nsteps, 1, 1])
-
             dynPar = phy_dy_params[:, :, i, :]
-            drmask = torch.bernoulli(pmat).detach_().to(self.device)
 
-            comPar = dynPar * (1 - drmask) + staPar * drmask
+            if self.dy_drop > 0.0:
+                # NOTE: expand() instead of repeat() saves mem
+                staPar = phy_dy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
+                drmask = torch.bernoulli(pmat).detach_().to(self.device)
+                comPar = dynPar * (1 - drmask) + staPar * drmask
+            else:
+                # When dy_drop=0, staPar is never used, so skip
+                comPar = dynPar
+
             param_dict[name] = change_param_range(
                 param=comPar,
                 bounds=self.parameter_bounds[name],
@@ -273,18 +300,18 @@ class Hbv_2(torch.nn.Module):
         self,
         phy_stat_params: torch.Tensor,
         stat_list: list,
-    ) -> torch.Tensor:
-        """Descale routing parameters.
+    ) -> dict[str, torch.Tensor]:
+        """Descale time-invariant model parameters.
 
         Parameters
         ----------
-        routing_params
-            Normalized routing parameters.
+        phy_stat_params
+            Normalized static model parameters.
 
         Returns
         -------
         dict
-            Dictionary of descaled routing parameters.
+            Dictionary of descaled static model parameters.
         """
         parameter_dict = {}
         for i, name in enumerate(stat_list):
@@ -293,32 +320,6 @@ class Hbv_2(torch.nn.Module):
             parameter_dict[name] = change_param_range(
                 param=param,
                 bounds=self.parameter_bounds[name],
-            )
-        return parameter_dict
-
-    def _descale_route_parameters(
-        self,
-        routing_params: torch.Tensor,
-    ) -> torch.Tensor:
-        """Descale routing parameters.
-
-        Parameters
-        ----------
-        routing_params
-            Normalized routing parameters.
-
-        Returns
-        -------
-        dict
-            Dictionary of descaled routing parameters.
-        """
-        parameter_dict = {}
-        for i, name in enumerate(self.routing_parameter_bounds.keys()):
-            param = routing_params[:, i]
-
-            parameter_dict[name] = change_param_range(
-                param=param,
-                bounds=self.routing_parameter_bounds[name],
             )
         return parameter_dict
 
@@ -348,7 +349,12 @@ class Hbv_2(torch.nn.Module):
         self.muwts = x_dict.get('muwts', None)
         ngrid = x.shape[1]
 
-        # Unpack parameters.
+        # Gage-level aggregation info (used when gage_agg=True).
+        agg_info = None
+        if self.gage_agg and 'areas' in x_dict and 'outlet_topo' in x_dict:
+            agg_info = (x_dict['areas'], x_dict['outlet_topo'])
+
+        # Unpack parameters
         phy_dy_params, phy_static_params, routing_params = self._unpack_parameters(
             parameters
         )
@@ -373,6 +379,8 @@ class Hbv_2(torch.nn.Module):
         else:
             current_states = self.states
 
+        pred_cutoff = self.warmup
+
         fluxes, states = self._PBM(
             x,
             Ac,
@@ -380,12 +388,16 @@ class Hbv_2(torch.nn.Module):
             current_states,
             phy_dy_params_dict,
             phy_static_params_dict,
+            agg_info=agg_info,
         )
+
+        # Drop warmup period
+        fluxes = trim_warmup(fluxes, pred_cutoff, x.shape[0])
 
         # State caching
         self._state_cache = states
 
-        if self.cache_states:
+        if self.cache_states and states is not None:
             self.states = tuple(s[-1].detach() for s in self._state_cache)
 
         return fluxes
@@ -398,10 +410,9 @@ class Hbv_2(torch.nn.Module):
         states: tuple,
         phy_dy_params_dict: dict,
         phy_static_params_dict: dict,
+        agg_info: tuple = None,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
-        """Run through process-based model (PBM).
-
-        Flux outputs are in mm/day.
+        """Core model physics.
 
         Parameters
         ----------
@@ -426,40 +437,94 @@ class Hbv_2(torch.nn.Module):
         nsteps, ngrid = P.shape
 
         # Expand dims to accomodate for nmul models.
-        Pm = P.unsqueeze(2).repeat(1, 1, self.nmul)
-        Tm = T.unsqueeze(2).repeat(1, 1, self.nmul)
-        PETm = PET.unsqueeze(-1).repeat(1, 1, self.nmul)
+        # NOTE:expand() instead of repeat() saves mem (don't do inplace writes)
+        Pm = P.unsqueeze(2).expand(-1, -1, self.nmul)
+        Tm = T.unsqueeze(2).expand(-1, -1, self.nmul)
+        PETm = PET.unsqueeze(-1).expand(-1, -1, self.nmul)
 
         # Apply correction factor to precipitation
         # P = parPCORR.repeat(nsteps, 1) * P
 
-        # Initialize time series of model variables in shape [time, basins, nmul].
-        Qsimmu = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
-        Q0_sim = (
-            torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
-        )
-        Q1_sim = (
-            torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
-        )
-        Q2_sim = (
-            torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.0001
-        )
+        # Bool for discarding non-critical outputs for training.
+        _compact = not self.full_output and not self.comprout and self.muwts is None
 
-        AET = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        recharge_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        evapfactor_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        capillary_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        # Aggregate Q inside the loop, route at gage level.
+        _gage_agg = agg_info is not None
+        if _gage_agg:
+            areas, outlet_topo = agg_info
+            n_gage = outlet_topo.shape[1]
+            # Force compact mode for gage_agg (no per-component gage output).
+            _compact = True
 
-        # NOTE: new for MTS -- Save model states for all time steps.
-        SNOWPACK_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        MELTWATER_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
-        SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        # Output dimension: n_gage when aggregating, else ngrid (catchments).
+        out_dim = n_gage if _gage_agg else ngrid
+
+        # Initialize time series model variables in shape [time, basins, nmul].
+        if _compact:
+            Qsimmu = torch.zeros(
+                nsteps,
+                out_dim,
+                dtype=torch.float32,
+                device=self.device,
+            )
+            AET = torch.zeros(
+                nsteps,
+                out_dim,
+                dtype=torch.float32,
+                device=self.device,
+            )
+        else:
+            Qsimmu = (
+                torch.zeros(
+                    Pm.size(),
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                + 0.001
+            )
+            AET = (
+                torch.zeros(
+                    Pm.size(),
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                + 0.001
+            )
+
+        if self.full_output:
+            Q0_sim = (
+                torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+            )
+            Q1_sim = (
+                torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+            )
+            Q2_sim = (
+                torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
+            )
+            recharge_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            excs_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            evapfactor_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            tosoil_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            PERC_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SWE_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            capillary_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+
+            # Save model states for all time steps.
+            SNOWPACK_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            MELTWATER_sim = torch.zeros(
+                Pm.size(), dtype=torch.float32, device=self.device
+            )
+            SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+            SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
         param_dict = {}
         for t in range(nsteps):
@@ -471,15 +536,18 @@ class Hbv_2(torch.nn.Module):
 
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
-            parTT_new = (Elevation >= 2000).type(torch.float32) * 4.0 + (
-                Elevation < 2000
-            ).type(torch.float32) * param_dict['parTT']
-            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT_new).type(torch.float32))
-            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT_new).type(torch.float32))
+            if self.elev_threshold:
+                parTT = (Elevation >= 2000).type(torch.float32) * 4.0 + (
+                    Elevation < 2000
+                ).type(torch.float32) * param_dict['parTT']
+            else:
+                parTT = param_dict['parTT']
+            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT).type(torch.float32))
+            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT).type(torch.float32))
 
             # Snow -------------------------------
             SNOWPACK = SNOWPACK + SNOW
-            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT_new)
+            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT)
             # melt[melt < 0.0] = 0.0
             melt = torch.clamp(melt, min=0.0)
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
@@ -487,9 +555,7 @@ class Hbv_2(torch.nn.Module):
             MELTWATER = MELTWATER + melt
             SNOWPACK = SNOWPACK - melt
             refreezing = (
-                param_dict['parCFR']
-                * param_dict['parCFMAX']
-                * (parTT_new - Tm[t, :, :])
+                param_dict['parCFR'] * param_dict['parCFMAX'] * (parTT - Tm[t, :, :])
             )
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
@@ -522,7 +588,7 @@ class Hbv_2(torch.nn.Module):
             ETact = torch.min(SM, ETact)
             SM = torch.clamp(SM - ETact, min=self.nearzero)
 
-            # Capillary rise (HBV 1.1p mod) -------------------------------
+            # Capillary rise (added in HBV1.1p) -------------------------------
             capillary = torch.min(
                 SLZ,
                 param_dict['parC']
@@ -533,7 +599,7 @@ class Hbv_2(torch.nn.Module):
             SM = torch.clamp(SM + capillary, min=self.nearzero)
             SLZ = torch.clamp(SLZ - capillary, min=self.nearzero)
 
-            # Groundwater boxes -------------------------------
+            # Groundwater -------------------------------
             SUZ = SUZ + recharge + excess
             PERC = torch.min(SUZ, param_dict['parPERC'])
             SUZ = SUZ - PERC
@@ -543,40 +609,53 @@ class Hbv_2(torch.nn.Module):
             SUZ = SUZ - Q1
             SLZ = SLZ + PERC
 
+            # Linear reservoir for surface water -------------------------------
             LF = torch.clamp(
                 (Ac - param_dict['parAC']) / 1000, min=-1, max=1
             ) * param_dict['parRT'] * (Ac < 2500) + torch.exp(
                 torch.clamp(-(Ac - 2500) / 50, min=-10.0, max=0.0)
             ) * param_dict['parRT'] * (Ac >= 2500)
-            SLZ = torch.clamp(SLZ + LF, min=0.0)
+            SLZ = torch.clamp(SLZ + LF, min=self.nearzero)
 
             Q2 = param_dict['parK2'] * SLZ
             SLZ = SLZ - Q2
 
             # --- Outputs ---
-            Qsimmu[t, :, :] = Q0 + Q1 + Q2
-            Q0_sim[t, :, :] = Q0
-            Q1_sim[t, :, :] = Q1
-            Q2_sim[t, :, :] = Q2
-            AET[t, :, :] = ETact
-            SWE_sim[t, :, :] = SNOWPACK
-            capillary_sim[t, :, :] = capillary
+            if _gage_agg:
+                # Area-weighted aggregation from catchment to gage level.
+                Q_cat = (Q0 + Q1 + Q2).mean(-1)  # [n_cat]
+                Qsimmu[t, :] = (Q_cat * areas) @ outlet_topo
+                AET[t, :] = (ETact.mean(-1) * areas) @ outlet_topo
+            elif _compact:
+                Qsimmu[t, :] = (Q0 + Q1 + Q2).mean(-1)
+                AET[t, :] = ETact.mean(-1)
+            else:
+                Qsimmu[t, :, :] = Q0 + Q1 + Q2
+                AET[t, :, :] = ETact
 
-            recharge_sim[t, :, :] = recharge
-            excs_sim[t, :, :] = excess
-            evapfactor_sim[t, :, :] = evapfactor
-            tosoil_sim[t, :, :] = tosoil
-            PERC_sim[t, :, :] = PERC
+            if self.full_output:
+                Q0_sim[t, :, :] = Q0
+                Q1_sim[t, :, :] = Q1
+                Q2_sim[t, :, :] = Q2
+                SWE_sim[t, :, :] = SNOWPACK
+                capillary_sim[t, :, :] = capillary
+                recharge_sim[t, :, :] = recharge
+                excs_sim[t, :, :] = excess
+                evapfactor_sim[t, :, :] = evapfactor
+                tosoil_sim[t, :, :] = tosoil
+                PERC_sim[t, :, :] = PERC
 
-            # NOTE: new for MTS -- Save model states for all time steps.
-            SNOWPACK_sim[t, :, :] = SNOWPACK
-            MELTWATER_sim[t, :, :] = MELTWATER
-            SM_sim[t, :, :] = SM
-            SUZ_sim[t, :, :] = SUZ
-            SLZ_sim[t, :, :] = SLZ
+                # NOTE: for MTS, save states for all time steps.
+                SNOWPACK_sim[t, :, :] = SNOWPACK
+                MELTWATER_sim[t, :, :] = MELTWATER
+                SM_sim[t, :, :] = SM
+                SUZ_sim[t, :, :] = SUZ
+                SLZ_sim[t, :, :] = SLZ
 
         # Get the average or weighted average using learned weights.
-        if self.muwts is None:
+        if _compact:
+            Qsimavg = Qsimmu  # Already averaged in the loop.
+        elif self.muwts is None:
             Qsimavg = Qsimmu.mean(-1)
         else:
             Qsimavg = (Qsimmu * self.muwts).sum(-1)
@@ -584,29 +663,50 @@ class Hbv_2(torch.nn.Module):
         # Run routing
         if self.routing:
             # Routing for all components or just the average.
-            if self.comprout:
+            if self.comprout and not _gage_agg:
                 # All components; reshape to [time, gages * num models]
                 Qsim = Qsimmu.view(nsteps, ngrid * self.nmul)
             else:
                 # Average, then do routing.
                 Qsim = Qsimavg
 
-            UH = uh_gamma(
-                self.routing_param_dict['route_a'].repeat(nsteps, 1).unsqueeze(-1),
-                self.routing_param_dict['route_b'].repeat(nsteps, 1).unsqueeze(-1),
-                lenF=self.lenF,
-            )
+            if _gage_agg:
+                # Aggregate routing parameters to gage level.
+                route_a_gage = (
+                    self.routing_param_dict['route_a'] * areas
+                ) @ outlet_topo
+                route_b_gage = (
+                    self.routing_param_dict['route_b'] * areas
+                ) @ outlet_topo
+                UH = uh_gamma(
+                    route_a_gage.repeat(self.lenF, 1).unsqueeze(-1),
+                    route_b_gage.repeat(self.lenF, 1).unsqueeze(-1),
+                    lenF=self.lenF,
+                )
+            else:
+                # uh_gamma only uses first lenF rows, so use lenF instead of expanding (save mem)
+                UH = uh_gamma(
+                    self.routing_param_dict['route_a']
+                    .repeat(self.lenF, 1)
+                    .unsqueeze(-1),
+                    self.routing_param_dict['route_b']
+                    .repeat(self.lenF, 1)
+                    .unsqueeze(-1),
+                    lenF=self.lenF,
+                )
+
             rf = torch.unsqueeze(Qsim, -1).permute([1, 2, 0])  # [gages,vars,time]
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
             Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
-            # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
-            rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
-            rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
-            rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
-            Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
+            if self.full_output:
+                # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
+                rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+                Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
+                rf_Q1 = Q1_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+                Q1_rout = uh_conv(rf_Q1, UH).permute([2, 0, 1])
+                rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
+                Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
 
             if self.comprout:
                 # Qs is now shape [time, [gages*num models], vars]
@@ -622,50 +722,54 @@ class Hbv_2(torch.nn.Module):
             # No routing, only output the average of all model sims.
             Qsim = Qsimavg
             Qs = torch.unsqueeze(Qsimavg, -1)
-            Q0_rout = Q0_sim.mean(-1, keepdim=True)
-            Q1_rout = Q1_sim.mean(-1, keepdim=True)
-            Q2_rout = Q2_sim.mean(-1, keepdim=True)
+            if self.full_output:
+                Q0_rout = Q0_sim.mean(-1, keepdim=True)
+                Q1_rout = Q1_sim.mean(-1, keepdim=True)
+                Q2_rout = Q2_sim.mean(-1, keepdim=True)
 
-        states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
-
-        if self.initialize:
-            # If initialize is True, only return warmed-up storages.
-            return {}, states
+        if self.full_output:
+            states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
         else:
-            # Baseflow index (BFI) calculation
-            BFI_sim = (
-                100
-                * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[
-                    :, 0
-                ]
-            )
+            states = None
 
-            # Return all sim results.
+        if not self.full_output:
+            # Compact output: only streamflow and ET
             flux_dict = {
-                'streamflow': Qs,  # Routed Streamflow
-                'srflow': Q0_rout,  # Routed surface runoff
-                'ssflow': Q1_rout,  # Routed subsurface flow
-                'gwflow': Q2_rout,  # Routed groundwater flow
-                'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
-                'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
-                'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-                'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
-                'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
-                'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
-                'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
-                'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
-                'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
-                'evapfactor': evapfactor_sim.mean(
-                    -1, keepdim=True
-                ),  # Evaporation factor
-                'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
-                'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
-                'capillary': capillary_sim.mean(-1, keepdim=True),  # Capillary rise
-                'BFI': BFI_sim,  # Baseflow index
+                'streamflow': Qs,
+                'AET_hydro': AET.unsqueeze(-1)
+                if _compact
+                else AET.mean(-1, keepdim=True),
             }
-
-            if not self.warmup_states:
-                for key in flux_dict.keys():
-                    if key != 'BFI':
-                        flux_dict[key] = flux_dict[key][self.pred_cutoff :, :, :]
             return flux_dict, states
+
+        # Baseflow index
+        BFI_sim = (
+            100
+            * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[:, 0]
+        )
+
+        flux_dict = {
+            # Routed
+            'streamflow': Qs,
+            'srflow': Q0_rout,
+            'ssflow': Q1_rout,
+            'gwflow': Q2_rout,
+            # Non-routed
+            'AET_hydro': AET.mean(-1, keepdim=True),
+            'PET_hydro': PETm.mean(-1, keepdim=True),
+            'streamflow_no_rout': Qsim.unsqueeze(dim=2),
+            'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),
+            'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),
+            'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),
+            'recharge': recharge_sim.mean(-1, keepdim=True),
+            'excs': excs_sim.mean(-1, keepdim=True),
+            'tosoil': tosoil_sim.mean(-1, keepdim=True),
+            'percolation': PERC_sim.mean(-1, keepdim=True),
+            'capillary': capillary_sim.mean(-1, keepdim=True),
+            # Other outputs
+            'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
+            'SWE': SWE_sim.mean(-1, keepdim=True),
+            'BFI': BFI_sim,
+        }
+
+        return flux_dict, states

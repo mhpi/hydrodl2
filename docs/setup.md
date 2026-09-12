@@ -80,6 +80,7 @@ git clone https://github.com/mhpi/hydrodl2.git
 
   ```python
   import torch
+
   print(torch.cuda.is_available())
   ```
 

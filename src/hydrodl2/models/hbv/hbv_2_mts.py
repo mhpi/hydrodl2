@@ -22,9 +22,10 @@ class Hbv_2_mts(torch.nn.Module):
 
     Publication
     -----------
-    -   Yang, W., Ji, H., Lonzarich, L., Song, Y., Shen, C. (2025). Diffusion-Based
-        Probabilistic Modeling for Hourly Streamflow Prediction and Assimilation.
-        arXiv. https://arxiv.org/abs/2510.08488 **[Under Review]**
+    -   Yang, W., Ji, H., Lonzarich, L., Song, Y., Pan, M., Lawson, K., & Shen,
+        C. (2026). Diffusion-Based Probabilistic Modeling for Hourly Streamflow
+        Prediction and Assimilation. Water Resources Research, 62,
+        e2025WR042720. https://doi.org/10.1029/2025WR042720
 
     Parameters
     ----------
@@ -63,6 +64,7 @@ class Hbv_2_mts(torch.nn.Module):
         #         for name in self.high_freq_model.state_names
         #     }
         # )
+
         # Identity state transfer
         self.state_transfer_model = torch.nn.ModuleDict(
             {name: torch.nn.Identity() for name in self.high_freq_model.state_names}
