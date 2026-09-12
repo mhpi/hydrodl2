@@ -33,6 +33,58 @@ class Hbv_2(BasePhysicsModel):
         Configuration dictionary.
     device
         Device to run the model on.
+
+    Model Detail
+    ------------
+    * Variables (Inputs)
+        1) prcp -- Precipitation (mm/d).
+        2) tmean -- Mean air temperature (C).
+        3) pet -- Potential evapotranspiration (mm/d).
+
+    * Parameterization (Inputs)
+        1) parBETA -- Soil moisture shape parameter.
+        2) parFC -- Field capacity of the soil (mm).
+        3) parK0 -- Upper zone quick flow response factor.
+        4) parK1 -- Upper zone slow flow response factor.
+        5) parK2 -- Lower zone slow flow response factor.
+        6) parLP -- Threshold for soil moisture to start evapotranspiration.
+        7) parPERC -- Percolation from upper to lower groundwater zone.
+        8) parUZL -- Upper groundwater storage threshold for quick flow.
+        9) parTT -- Threshold temperature for snow/rain separation (C).
+        10) parCFMAX -- Degree-day factor for snowmelt (mm/C/day).
+        11) parCFR -- Refreezing factor for snowmelt.
+        12) parCWH -- Water holding capacity of snowpack.
+        13) parBETAET -- Soil moisture shape parameter for evapotranspiration.
+        14) parC -- Capillary rise factor.
+        15) parRT -- Recession time factor for lower groundwater zone.
+        16) parAC -- Area correction factor for lower groundwater zone.
+
+    * States (Outputs)
+        1) SNOWPACK -- Snowpack storage (mm).
+        2) MELTWATER -- Meltwater storage (mm).
+        3) SM -- Soil moisture storage (mm).
+        4) SUZ -- Upper groundwater storage (mm).
+        5) SLZ -- Lower groundwater storage (mm).
+
+    * Fluxes/Outputs
+        1) streamflow -- Routed streamflow (mm/d).
+        2) srflow -- Routed surface runoff (mm/d).
+        3) ssflow -- Routed subsurface flow (mm/d).
+        4) gwflow -- Routed groundwater flow (mm/d).
+        5) AET_hydro -- Actual evapotranspiration (mm/d).
+        6) PET_hydro -- Potential evapotranspiration (mm/d).
+        7) streamflow_no_rout -- Streamflow without routing (mm/d).
+        8) srflow_no_rout -- Surface runoff without routing (mm/d).
+        9) ssflow_no_rout -- Subsurface flow without routing (mm/d).
+        10) gwflow_no_rout -- Groundwater flow without routing (mm/d).
+        11) recharge -- Recharge to lower groundwater zone (mm/d).
+        12) excs -- Excess water from soil moisture storage (mm/d).
+        13) tosoil -- Infiltration to soil moisture storage (mm/d).
+        14) percolation -- Percolation from upper to lower groundwater zone (mm/d).
+        15) capillary -- Capillary rise from lower to upper groundwater zone (mm/d).
+        16) evapfactor -- Evaporation factor for soil moisture.
+        17) SWE -- Snow water equivalent (mm).
+        18) BFI -- Baseflow index (%).
     """
 
     def __init__(
@@ -47,7 +99,6 @@ class Hbv_2(BasePhysicsModel):
         self.warmup_states = True
         self.dynamic_params = []
         self.dy_drop = 0.0
-        self.variables = ['prcp', 'tmean', 'pet']
         self.routing = False
         self.lenF = 15
         self.comprout = False
@@ -55,45 +106,18 @@ class Hbv_2(BasePhysicsModel):
         self.nearzero = 1e-5
         self.nmul = 1
         self.cache_states = False
-        self.all_output = True  # Flag to output all vars.
-        self.elev_parTT = (
-            True  # Override parTT=4.0 for elevations >= 2000m (reference behavior).
-        )
-        self.gage_agg = (
-            False  # Aggregate Q to gage level inside HBV loop (reference behavior).
-        )
+        self.full_output = True  # Flag to output all vars.
+        self.elev_threshold = True  # Use elevation threshold for snow/ice melt.
+        self.gage_agg = False  # Aggregate Q to gage level.
         self.device = device
 
         self.states, self._state_cache = None, None
 
-        self.state_names = [
-            'SNOWPACK',  # Snowpack storage
-            'MELTWATER',  # Meltwater storage
-            'SM',  # Soil moisture storage
-            'SUZ',  # Upper groundwater storage
-            'SLZ',  # Lower groundwater storage
+        self.variables = [
+            'prcp',
+            'tmean',
+            'pet',
         ]
-        self.flux_names = [
-            'streamflow',  # Routed Streamflow
-            'srflow',  # Routed surface runoff
-            'ssflow',  # Routed subsurface flow
-            'gwflow',  # Routed groundwater flow
-            'AET_hydro',  # Actual ET
-            'PET_hydro',  # Potential ET
-            'SWE',  # Snow water equivalent
-            'streamflow_no_rout',  # Streamflow
-            'srflow_no_rout',  # Surface runoff
-            'ssflow_no_rout',  # Subsurface flow
-            'gwflow_no_rout',  # Groundwater flow
-            'recharge',  # Recharge
-            'excs',  # Excess stored water
-            'evapfactor',  # Evaporation factor
-            'tosoil',  # Infiltration
-            'percolation',  # Percolation
-            'capillary',  # Capillary rise
-            'BFI',  # Baseflow index
-        ]
-
         self.parameter_bounds = {
             'parBETA': [1.0, 6.0],
             'parFC': [50, 1000],
@@ -116,6 +140,33 @@ class Hbv_2(BasePhysicsModel):
             'route_a': [0, 2.9],
             'route_b': [0, 6.5],
         }
+        self.state_names = [
+            'SNOWPACK',
+            'MELTWATER',
+            'SM',
+            'SUZ',
+            'SLZ',
+        ]
+        self.flux_names = [
+            'streamflow',
+            'srflow',
+            'ssflow',
+            'gwflow',
+            'AET_hydro',
+            'PET_hydro',
+            'streamflow_no_rout',
+            'srflow_no_rout',
+            'ssflow_no_rout',
+            'gwflow_no_rout',
+            'recharge',
+            'excs',
+            'tosoil',
+            'percolation',
+            'capillary',
+            'evapfactor',
+            'SWE',
+            'BFI',
+        ]
 
         if not device:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -134,17 +185,16 @@ class Hbv_2(BasePhysicsModel):
             self.nearzero = config.get('nearzero', self.nearzero)
             self.nmul = config.get('nmul', self.nmul)
             self.cache_states = config.get('cache_states', self.cache_states)
-            self.all_output = config.get('all_output', self.all_output)
-            self.elev_parTT = config.get('elev_parTT', self.elev_parTT)
+            self.full_output = config.get('full_output', self.full_output)
+            self.elev_threshold = config.get('elev_threshold', self.elev_threshold)
             self.gage_agg = config.get('gage_agg', self.gage_agg)
         self._set_parameters()
 
     def _set_parameters(self) -> None:
-        """Get physical parameters."""
+        """Get model parameters."""
         self.phy_param_names = self.parameter_bounds.keys()
 
-        # Canonicalize to HBV param order regardless of how the user lists
-        # them in config, so NN output channels map to param names consistently.
+        # Make parameters order-independent
         self.dynamic_params = [
             name for name in self.phy_param_names if name in self.dynamic_params
         ]
@@ -182,7 +232,7 @@ class Hbv_2(BasePhysicsModel):
         dy_param_count = len(self.dynamic_params)
         dif_count = phy_param_count - dy_param_count
 
-        # Physical dynamic parameters
+        # Dynamic parameters
         phy_dy_params = parameters[0].view(
             parameters[0].shape[0],
             parameters[0].shape[1],
@@ -190,7 +240,7 @@ class Hbv_2(BasePhysicsModel):
             self.nmul,
         )
 
-        # Physical static parameters
+        # Static parameters
         phy_static_params = parameters[1][:, : dif_count * self.nmul].view(
             parameters[1].shape[0],
             dif_count,
@@ -209,19 +259,19 @@ class Hbv_2(BasePhysicsModel):
         phy_dy_params: torch.Tensor,
         dy_list: list,
     ) -> dict[str, torch.Tensor]:
-        """Descale time-dynamic physical parameters.
+        """Descale time-dynamic model parameters.
 
         Parameters
         ----------
-        phy_params
-            Normalized physical parameters.
+        phy_dy_params
+            Normalized model parameters.
         dy_list
             List of dynamic parameters.
 
         Returns
         -------
         dict
-            Dictionary of descaled physical parameters.
+            Dictionary of descaled model parameters.
         """
         nsteps = phy_dy_params.shape[0]
         ngrid = phy_dy_params.shape[1]
@@ -251,17 +301,17 @@ class Hbv_2(BasePhysicsModel):
         phy_stat_params: torch.Tensor,
         stat_list: list,
     ) -> dict[str, torch.Tensor]:
-        """Descale time-invariant physical parameters.
+        """Descale time-invariant model parameters.
 
         Parameters
         ----------
         phy_stat_params
-            Normalized static physical parameters.
+            Normalized static model parameters.
 
         Returns
         -------
         dict
-            Dictionary of descaled static physical parameters.
+            Dictionary of descaled static model parameters.
         """
         parameter_dict = {}
         for i, name in enumerate(stat_list):
@@ -304,7 +354,7 @@ class Hbv_2(BasePhysicsModel):
         if self.gage_agg and 'areas' in x_dict and 'outlet_topo' in x_dict:
             agg_info = (x_dict['areas'], x_dict['outlet_topo'])
 
-        # Unpack parameters.
+        # Unpack parameters
         phy_dy_params, phy_static_params, routing_params = self._unpack_parameters(
             parameters
         )
@@ -362,9 +412,7 @@ class Hbv_2(BasePhysicsModel):
         phy_static_params_dict: dict,
         agg_info: tuple = None,
     ) -> Union[tuple, dict[str, torch.Tensor]]:
-        """Run through process-based model (PBM).
-
-        Flux outputs are in mm/day.
+        """Core model physics.
 
         Parameters
         ----------
@@ -398,7 +446,7 @@ class Hbv_2(BasePhysicsModel):
         # P = parPCORR.repeat(nsteps, 1) * P
 
         # Bool for discarding non-critical outputs for training.
-        _compact = not self.all_output and not self.comprout and self.muwts is None
+        _compact = not self.full_output and not self.comprout and self.muwts is None
 
         # Aggregate Q inside the loop, route at gage level.
         _gage_agg = agg_info is not None
@@ -443,7 +491,7 @@ class Hbv_2(BasePhysicsModel):
                 + 0.001
             )
 
-        if self.all_output:
+        if self.full_output:
             Q0_sim = (
                 torch.zeros(Pm.size(), dtype=torch.float32, device=self.device) + 0.001
             )
@@ -488,7 +536,7 @@ class Hbv_2(BasePhysicsModel):
 
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
-            if self.elev_parTT:
+            if self.elev_threshold:
                 parTT = (Elevation >= 2000).type(torch.float32) * 4.0 + (
                     Elevation < 2000
                 ).type(torch.float32) * param_dict['parTT']
@@ -540,7 +588,7 @@ class Hbv_2(BasePhysicsModel):
             ETact = torch.min(SM, ETact)
             SM = torch.clamp(SM - ETact, min=self.nearzero)
 
-            # Capillary rise (HBV 1.1p mod) -------------------------------
+            # Capillary rise (added in HBV1.1p) -------------------------------
             capillary = torch.min(
                 SLZ,
                 param_dict['parC']
@@ -551,7 +599,7 @@ class Hbv_2(BasePhysicsModel):
             SM = torch.clamp(SM + capillary, min=self.nearzero)
             SLZ = torch.clamp(SLZ - capillary, min=self.nearzero)
 
-            # Groundwater boxes -------------------------------
+            # Groundwater -------------------------------
             SUZ = SUZ + recharge + excess
             PERC = torch.min(SUZ, param_dict['parPERC'])
             SUZ = SUZ - PERC
@@ -561,6 +609,7 @@ class Hbv_2(BasePhysicsModel):
             SUZ = SUZ - Q1
             SLZ = SLZ + PERC
 
+            # Linear reservoir for surface water -------------------------------
             LF = torch.clamp(
                 (Ac - param_dict['parAC']) / 1000, min=-1, max=1
             ) * param_dict['parRT'] * (Ac < 2500) + torch.exp(
@@ -584,7 +633,7 @@ class Hbv_2(BasePhysicsModel):
                 Qsimmu[t, :, :] = Q0 + Q1 + Q2
                 AET[t, :, :] = ETact
 
-            if self.all_output:
+            if self.full_output:
                 Q0_sim[t, :, :] = Q0
                 Q1_sim[t, :, :] = Q1
                 Q2_sim[t, :, :] = Q2
@@ -596,7 +645,7 @@ class Hbv_2(BasePhysicsModel):
                 tosoil_sim[t, :, :] = tosoil
                 PERC_sim[t, :, :] = PERC
 
-                # NOTE: new for MTS -- Save model states for all time steps.
+                # NOTE: for MTS, save states for all time steps.
                 SNOWPACK_sim[t, :, :] = SNOWPACK
                 MELTWATER_sim[t, :, :] = MELTWATER
                 SM_sim[t, :, :] = SM
@@ -622,7 +671,7 @@ class Hbv_2(BasePhysicsModel):
                 Qsim = Qsimavg
 
             if _gage_agg:
-                # Aggregate routing params to gage level.
+                # Aggregate routing parameters to gage level.
                 route_a_gage = (
                     self.routing_param_dict['route_a'] * areas
                 ) @ outlet_topo
@@ -650,7 +699,7 @@ class Hbv_2(BasePhysicsModel):
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
             Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
-            if self.all_output:
+            if self.full_output:
                 # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
                 rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
                 Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
@@ -673,17 +722,17 @@ class Hbv_2(BasePhysicsModel):
             # No routing, only output the average of all model sims.
             Qsim = Qsimavg
             Qs = torch.unsqueeze(Qsimavg, -1)
-            if self.all_output:
+            if self.full_output:
                 Q0_rout = Q0_sim.mean(-1, keepdim=True)
                 Q1_rout = Q1_sim.mean(-1, keepdim=True)
                 Q2_rout = Q2_sim.mean(-1, keepdim=True)
 
-        if self.all_output:
+        if self.full_output:
             states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
         else:
             states = None
 
-        if not self.all_output:
+        if not self.full_output:
             # Compact output: only streamflow and ET
             flux_dict = {
                 'streamflow': Qs,
@@ -693,33 +742,34 @@ class Hbv_2(BasePhysicsModel):
             }
             return flux_dict, states
 
-        # Full diagnostic output.
         # Baseflow index
         BFI_sim = (
             100
             * (torch.sum(Q2_rout, dim=0) / (torch.sum(Qs, dim=0) + self.nearzero))[:, 0]
         )
 
-        # Return all sim results.
         flux_dict = {
-            'streamflow': Qs,  # Routed Streamflow
-            'srflow': Q0_rout,  # Routed surface runoff
-            'ssflow': Q1_rout,  # Routed subsurface flow
-            'gwflow': Q2_rout,  # Routed groundwater flow
-            'AET_hydro': AET.mean(-1, keepdim=True),  # Actual ET
-            'PET_hydro': PETm.mean(-1, keepdim=True),  # Potential ET
-            'SWE': SWE_sim.mean(-1, keepdim=True),  # Snow water equivalent
-            'streamflow_no_rout': Qsim.unsqueeze(dim=2),  # Streamflow
-            'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),  # Surface runoff
-            'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),  # Subsurface flow
-            'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),  # Groundwater flow
-            'recharge': recharge_sim.mean(-1, keepdim=True),  # Recharge
-            'excs': excs_sim.mean(-1, keepdim=True),  # Excess stored water
-            'evapfactor': evapfactor_sim.mean(-1, keepdim=True),  # Evaporation factor
-            'tosoil': tosoil_sim.mean(-1, keepdim=True),  # Infiltration
-            'percolation': PERC_sim.mean(-1, keepdim=True),  # Percolation
-            'capillary': capillary_sim.mean(-1, keepdim=True),  # Capillary rise
-            'BFI': BFI_sim,  # Baseflow index
+            # Routed
+            'streamflow': Qs,
+            'srflow': Q0_rout,
+            'ssflow': Q1_rout,
+            'gwflow': Q2_rout,
+            # Non-routed
+            'AET_hydro': AET.mean(-1, keepdim=True),
+            'PET_hydro': PETm.mean(-1, keepdim=True),
+            'streamflow_no_rout': Qsim.unsqueeze(dim=2),
+            'srflow_no_rout': Q0_sim.mean(-1, keepdim=True),
+            'ssflow_no_rout': Q1_sim.mean(-1, keepdim=True),
+            'gwflow_no_rout': Q2_sim.mean(-1, keepdim=True),
+            'recharge': recharge_sim.mean(-1, keepdim=True),
+            'excs': excs_sim.mean(-1, keepdim=True),
+            'tosoil': tosoil_sim.mean(-1, keepdim=True),
+            'percolation': PERC_sim.mean(-1, keepdim=True),
+            'capillary': capillary_sim.mean(-1, keepdim=True),
+            # Other outputs
+            'evapfactor': evapfactor_sim.mean(-1, keepdim=True),
+            'SWE': SWE_sim.mean(-1, keepdim=True),
+            'BFI': BFI_sim,
         }
 
         return flux_dict, states

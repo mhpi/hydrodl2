@@ -171,8 +171,8 @@ class TestModelStructure:
         """
         Hbv_2 = load_model('hbv_2')
         model = Hbv_2(device=DEVICE)
-        assert model.elev_parTT is True, (
-            "elev_parTT must default to True: the original model always "
+        assert model.elev_threshold is True, (
+            "elev_threshold must default to True: the original model always "
             "applied the elevation-based parTT override (T>=2000m -> parTT=4.0)."
         )
         assert model.gage_agg is False
