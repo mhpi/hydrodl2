@@ -176,4 +176,4 @@ class TestModelStructure:
             "applied the elevation-based parTT override (T>=2000m -> parTT=4.0)."
         )
         assert model.gage_agg is False
-        assert model.all_output is True
+        assert model.full_output is True
