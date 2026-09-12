@@ -49,7 +49,6 @@ class HbvAdj(torch.nn.Module):
         super().__init__()
         self.name = 'HBV Adjoint'
         self.config = config
-        self.initialize = False
         self.warmup = 0
         self.dynamic_params = []
         self.dy_drop = 0.0

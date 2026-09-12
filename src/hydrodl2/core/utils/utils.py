@@ -1,7 +1,4 @@
-"""
-Note: If adding new public methods, please add them to __all__
-at the top of the file and in utils/__init__.py.
-"""
+"""General utility functions for HydroDL2."""
 
 import os
 from pathlib import Path
