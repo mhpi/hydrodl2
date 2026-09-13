@@ -18,8 +18,8 @@ from tests import (
 
 
 @pytest.fixture(
-    params=['Hbv', 'Hbv_1_1p', 'Hbv_2', 'Hbv_2_hourly'],
-    ids=['Hbv', 'Hbv_1_1p', 'Hbv_2', 'Hbv_2_hourly'],
+    params=['Hbv', 'Hbv_1_1p', 'Hbv_2', 'Hbv_2_hourly', 'Hbv_2_1_hourly'],
+    ids=['Hbv', 'Hbv_1_1p', 'Hbv_2', 'Hbv_2_hourly', 'Hbv_2_1_hourly'],
 )
 def model_setup(request):
     """Yields (model, x_dict, params, streamflow_key) for each model variant."""
@@ -46,6 +46,12 @@ def model_setup(request):
         sf_key = 'streamflow'
     elif name == 'Hbv_2_hourly':
         Cls = load_model('hbv_2_hourly')
+        config = _hbv_2_hourly_config_dict()
+        model = Cls(config, device=DEVICE)
+        x_dict, params = make_hbv2_hourly_inputs(model)
+        sf_key = 'streamflow'
+    elif name == 'Hbv_2_1_hourly':
+        Cls = load_model('hbv_2_1_hourly')
         config = _hbv_2_hourly_config_dict()
         model = Cls(config, device=DEVICE)
         x_dict, params = make_hbv2_hourly_inputs(model)

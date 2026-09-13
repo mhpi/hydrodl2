@@ -7,10 +7,11 @@ from hydrodl2.models.base import BasePhysicsModel
 
 
 class Hbv_2_hourly(BasePhysicsModel):
-    """Hourly HBV 2.0.
+    """Hourly HBV 2.1.
 
     Multi-component, multi-scale, differentiable PyTorch HBV model with rainfall
-    runoff simulation on unit basins.
+    runoff simulation on unit basins. Improves on version 2.0 by adding
+    infiltration-excess runoff and capillary rise.
 
     Authors
     -------
@@ -40,7 +41,7 @@ class Hbv_2_hourly(BasePhysicsModel):
         device: Optional[torch.device] = None,
     ) -> None:
         super().__init__()
-        self.name = 'HBV 2.0 Hourly'
+        self.name = 'HBV 2.1 Hourly'
         self.config = config
         self.warmup = 0
         self.pred_cutoff = 0
@@ -73,6 +74,8 @@ class Hbv_2_hourly(BasePhysicsModel):
             'SM',  # Soil moisture storage
             'SUZ',  # Upper groundwater storage
             'SLZ',  # Lower groundwater storage
+            'SIE1',  # Infiltration-excess hillslope cascade storage 1
+            'SIE2',  # Infiltration-excess hillslope cascade storage 2
         ]
         self.flux_names = [
             'streamflow',  # Routed Streamflow
@@ -98,7 +101,7 @@ class Hbv_2_hourly(BasePhysicsModel):
         self.parameter_bounds = {
             'parBETA': [1.0, 6.0],
             'parFC': [50, 1000],
-            'parK0': [0.05, 0.9],
+            'parK0': [0.05, 12.0],  # for hourly
             'parK1': [0.01, 0.5],
             'parK2': [0.001, 0.2],
             'parLP': [0.2, 1],
@@ -112,13 +115,10 @@ class Hbv_2_hourly(BasePhysicsModel):
             'parC': [0, 1],
             'parRT': [0, 20],
             'parAC': [0, 2500],
-            # Infiltration parameters for hourly
-            'parF0': [
-                5.0 / self.dt,
-                120.0 / self.dt,
-            ],  # dry (max) infiltration capacity, mm/day
-            'parFMIN': [0.0, 1.0],  # wet (min) capacity ratio
-            'parALPHA': [0.5, 5.0],  # shape of f(s); larger -> more thresholdy
+            # Infiltration-excess parameters for hourly
+            'parF0': [5.0 / self.dt, 120.0 / self.dt],
+            'parALPHA': [0.5, 1.0],
+            'parKS': [0.05, 10.0],
         }
         self.routing_parameter_bounds = {
             'route_a': [0, 5.0],
@@ -135,8 +135,8 @@ class Hbv_2_hourly(BasePhysicsModel):
 
         if not self.infiltration:
             self.parameter_bounds.pop('parF0')
-            self.parameter_bounds.pop('parFMIN')
             self.parameter_bounds.pop('parALPHA')
+            self.parameter_bounds.pop('parKS')
         if not self.lag_uh:
             self.distr_parameter_bounds.pop('route_tau')
 
@@ -429,7 +429,14 @@ class Hbv_2_hourly(BasePhysicsModel):
             Tuple or dictionary of model outputs.
         """
         dt = self.dt
-        SNOWPACK, MELTWATER, SM, SUZ, SLZ = states
+        if len(states) == 5:
+            SNOWPACK, MELTWATER, SM, SUZ, SLZ = states
+            SIE1 = torch.full_like(SNOWPACK, 0.001)
+            SIE2 = torch.full_like(SNOWPACK, 0.001)
+        elif len(states) == 7:
+            SNOWPACK, MELTWATER, SM, SUZ, SLZ, SIE1, SIE2 = states
+        else:
+            raise ValueError("`states` must contain 5 or 7 tensors.")
 
         # Forcings
         P = forcing[:, :, self.variables.index('prcp')] / dt  # Precipitation
@@ -473,6 +480,8 @@ class Hbv_2_hourly(BasePhysicsModel):
         SM_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SUZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
         SLZ_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        SIE1_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
+        SIE2_sim = torch.zeros(Pm.size(), dtype=torch.float32, device=self.device)
 
         param_dict = {}
         for t in range(nsteps):
@@ -482,6 +491,8 @@ class Hbv_2_hourly(BasePhysicsModel):
             SM = torch.clamp(SM, min=self.nearzero)
             SUZ = torch.clamp(SUZ, min=self.nearzero)
             SLZ = torch.clamp(SLZ, min=self.nearzero)
+            SIE1 = torch.clamp(SIE1, min=self.nearzero)
+            SIE2 = torch.clamp(SIE2, min=self.nearzero)
             # ------------------------------------------------------------------
 
             # Get dynamic parameter values per timestep.
@@ -522,28 +533,29 @@ class Hbv_2_hourly(BasePhysicsModel):
             tosoil = torch.clamp(tosoil, min=0.0)
             MELTWATER = MELTWATER - tosoil * dt
 
-            # NOTE: new for MTS -- Hortonian Infiltration Excess
+            # Saturation excess plus Hortonian infiltration excess over the
+            # unsaturated fraction of the grid cell.
             if self.infiltration:
-                # Hortonian infiltration excess: infiltration capacity as a function of wetness
                 W = RAIN + tosoil
-                s = torch.clamp(
-                    SM / param_dict['parFC'], 0.0, 1.0 - 0.01
-                )  # relative wetness, safe guard for pow and bf/fp16
-                parFMIN = param_dict['parFMIN'] * param_dict['parF0']
-                with torch.amp.autocast(
-                    device_type='cuda', enabled=False
-                ):  # torch.pow not stable with bf/fp16 when base ~ 0
-                    fcap = parFMIN + (param_dict['parF0'] - parFMIN) * torch.pow(
-                        1.0 - s, param_dict['parALPHA']
-                    )
-                infiltration = torch.minimum(W, fcap)  # goes into soil
-                IE = torch.clamp(W - fcap, min=0.0)  # Hortonian excess
+                with torch.amp.autocast(device_type='cuda', enabled=False):
+                    W32 = torch.clamp(W.float(), min=0.0)
+                    FC = param_dict['parFC'].float()
+                    beta = param_dict['parBETA'].float()
+                    F0 = param_dict['parF0'].float()
+                    alpha = param_dict['parALPHA'].float()
 
-                # Soil and evaporation using Infiltration
-                soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
-                soil_wetness = torch.clamp(soil_wetness, 0.0, 1.0)
-                recharge = infiltration * soil_wetness
-                SM = SM + (infiltration - recharge) * dt
+                    s = torch.clamp(SM.float() / FC, 0.0, 1.0 - 1e-4)
+                    saturated_fraction = torch.clamp(s**beta, 0.0, 1.0)
+                    unsaturated_fraction = 1.0 - saturated_fraction
+                    recharge = W32 * saturated_fraction
+
+                    d_star = torch.clamp((W32 / F0) ** (1.0 / alpha), 0.0, 1.0)
+                    f_integral = F0 * d_star ** (alpha + 1.0) / (alpha + 1.0)
+                    IE = torch.clamp(
+                        unsaturated_fraction * (W32 * d_star - f_integral), min=0.0
+                    )
+                    to_soil = torch.clamp(W32 * unsaturated_fraction - IE, min=0.0)
+                    SM = SM + to_soil * dt
             else:
                 soil_wetness = (SM / param_dict['parFC']) ** param_dict['parBETA']
                 soil_wetness = torch.clamp(soil_wetness, min=0.0, max=1.0)
@@ -598,9 +610,16 @@ class Hbv_2_hourly(BasePhysicsModel):
             Q2 = param_dict['parK2'] * SLZ
             SLZ = SLZ - Q2 * dt
 
-            # NOTE: new for MTS -- Add Hortonian Infiltration Excess
+            # Route infiltration excess through a two-store Nash cascade.
             if self.infiltration:
-                Qsimmu[t, :, :] = Q0 + Q1 + Q2 + IE
+                kS = param_dict['parKS'] * 2.0
+                SIE1 = SIE1 + IE * dt
+                q12 = torch.min(kS * SIE1 * dt, SIE1) / dt
+                SIE1 = SIE1 - q12 * dt
+                SIE2 = SIE2 + q12 * dt
+                Qie = torch.min(kS * SIE2 * dt, SIE2) / dt
+                SIE2 = SIE2 - Qie * dt
+                Qsimmu[t, :, :] = Q0 + Q1 + Q2 + Qie
             else:
                 Qsimmu[t, :, :] = Q0 + Q1 + Q2
             # ------------------------------------------------------
@@ -624,6 +643,8 @@ class Hbv_2_hourly(BasePhysicsModel):
             SM_sim[t, :, :] = SM
             SUZ_sim[t, :, :] = SUZ
             SLZ_sim[t, :, :] = SLZ
+            SIE1_sim[t, :, :] = SIE1
+            SIE2_sim[t, :, :] = SIE2
 
         # Get the average or weighted average using learned weights.
         if self.muwts is None:
@@ -673,7 +694,15 @@ class Hbv_2_hourly(BasePhysicsModel):
             Qs = torch.unsqueeze(Qsimavg, -1)
             # Q0_rout = Q1_rout = Q2_rout = None
 
-        states = (SNOWPACK_sim, MELTWATER_sim, SM_sim, SUZ_sim, SLZ_sim)
+        states = (
+            SNOWPACK_sim,
+            MELTWATER_sim,
+            SM_sim,
+            SUZ_sim,
+            SLZ_sim,
+            SIE1_sim,
+            SIE2_sim,
+        )
 
         # Baseflow index (BFI) calculation
         # BFI_sim = (
