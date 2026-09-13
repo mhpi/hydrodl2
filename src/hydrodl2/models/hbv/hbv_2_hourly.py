@@ -194,8 +194,9 @@ class Hbv_2_hourly(BasePhysicsModel):
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-            Tuple of physical and routing parameters.
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+            Tuple of dynamic physical, static physical, routing, and
+            distributed routing parameters.
         """
         phy_param_count = len(self.parameter_bounds)
         dy_param_count = len(self.dynamic_params)
@@ -322,7 +323,7 @@ class Hbv_2_hourly(BasePhysicsModel):
         self,
         x_dict: dict[str, torch.Tensor],
         parameters: torch.Tensor,
-    ) -> tuple[dict[str, torch.Tensor], tuple]:
+    ) -> dict[str, torch.Tensor]:
         """Forward pass.
 
         Parameters
@@ -334,13 +335,13 @@ class Hbv_2_hourly(BasePhysicsModel):
 
         Returns
         -------
-        tuple[dict, tuple]
-            Tuple or dictionary of model outputs.
+        dict[str, torch.Tensor]
+            Dictionary of model outputs.
         """
         # Unpack input data.
         x = x_dict['x_phy']
-        Ac = x_dict['ac_all'].unsqueeze(-1).repeat(1, self.nmul)
-        Elevation = x_dict['elev_all'].unsqueeze(-1).repeat(1, self.nmul)
+        ac = x_dict['ac_all'].unsqueeze(-1).repeat(1, self.nmul)
+        elevation = x_dict['elev_all'].unsqueeze(-1).repeat(1, self.nmul)
         outlet_topo = x_dict['outlet_topo']
         areas = x_dict['areas']
         self.muwts = x_dict.get('muwts', None)
@@ -378,8 +379,8 @@ class Hbv_2_hourly(BasePhysicsModel):
 
         fluxes, states = self._PBM(
             x,
-            Ac,
-            Elevation,
+            ac,
+            elevation,
             current_states,
             phy_dy_params_dict,
             phy_static_params_dict,
@@ -401,8 +402,8 @@ class Hbv_2_hourly(BasePhysicsModel):
     def _PBM(
         self,
         forcing: torch.Tensor,
-        Ac: torch.Tensor,
-        Elevation: torch.Tensor,
+        ac: torch.Tensor,
+        elevation: torch.Tensor,
         states: tuple,
         phy_dy_params_dict: dict,
         phy_static_params_dict: dict,
@@ -418,10 +419,22 @@ class Hbv_2_hourly(BasePhysicsModel):
         ----------
         forcing
             Input forcing data.
+        ac
+            Catchment area per unit basin.
+        elevation
+            Mean elevation per unit basin.
         states
             Initial model states.
-        full_param_dict
-            Dictionary of model parameters.
+        phy_dy_params_dict
+            Dictionary of descaled time-dynamic physical parameters.
+        phy_static_params_dict
+            Dictionary of descaled time-invariant physical parameters.
+        outlet_topo
+            Gage-to-unit-basin incidence matrix, shape (n_gages, n_units).
+        areas
+            Unit basin areas, shape (n_units,).
+        distr_params_dict
+            Dictionary of descaled distributed routing parameters.
 
         Returns
         -------
@@ -492,15 +505,15 @@ class Hbv_2_hourly(BasePhysicsModel):
 
             # Separate precipitation into liquid and solid components.
             PRECIP = Pm[t, :, :]
-            parTT_new = (Elevation >= 2000).type(torch.float32) * 4.0 + (
-                Elevation < 2000
+            parTT = (elevation >= 2000).type(torch.float32) * 4.0 + (
+                elevation < 2000
             ).type(torch.float32) * param_dict['parTT']
-            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT_new).type(torch.float32))
-            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT_new).type(torch.float32))
+            RAIN = torch.mul(PRECIP, (Tm[t, :, :] >= parTT).type(torch.float32))
+            SNOW = torch.mul(PRECIP, (Tm[t, :, :] < parTT).type(torch.float32))
 
             # Snow -------------------------------
             SNOWPACK = SNOWPACK + SNOW * dt
-            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT_new)
+            melt = param_dict['parCFMAX'] * (Tm[t, :, :] - parTT)
             # melt[melt < 0.0] = 0.0
             melt = torch.clamp(melt, min=0.0)
             # melt[melt > SNOWPACK] = SNOWPACK[melt > SNOWPACK]
@@ -508,9 +521,7 @@ class Hbv_2_hourly(BasePhysicsModel):
             MELTWATER = MELTWATER + melt
             SNOWPACK = SNOWPACK - melt
             refreezing = (
-                param_dict['parCFR']
-                * param_dict['parCFMAX']
-                * (parTT_new - Tm[t, :, :])
+                param_dict['parCFR'] * param_dict['parCFMAX'] * (parTT - Tm[t, :, :])
             )
             # refreezing[refreezing < 0.0] = 0.0
             # refreezing[refreezing > MELTWATER] = MELTWATER[refreezing > MELTWATER]
@@ -589,10 +600,10 @@ class Hbv_2_hourly(BasePhysicsModel):
             SLZ = SLZ + PERC * dt
 
             LF = torch.clamp(
-                (Ac - param_dict['parAC']) / 1000, min=-1, max=1
-            ) * param_dict['parRT'] * (Ac < 2500) + torch.exp(
-                torch.clamp(-(Ac - 2500) / 50, min=-10.0, max=0.0)
-            ) * param_dict['parRT'] * (Ac >= 2500)
+                (ac - param_dict['parAC']) / 1000, min=-1, max=1
+            ) * param_dict['parRT'] * (ac < 2500) + torch.exp(
+                torch.clamp(-(ac - 2500) / 50, min=-10.0, max=0.0)
+            ) * param_dict['parRT'] * (ac >= 2500)
             SLZ = torch.clamp(SLZ + LF * dt, min=self.nearzero)
 
             Q2 = param_dict['parK2'] * SLZ
@@ -745,13 +756,26 @@ class Hbv_2_hourly(BasePhysicsModel):
         distr_params_dict: dict,
         outlet_topo: torch.Tensor,
         areas: torch.Tensor,
-    ):
-        """
-        :param Qs: (nsteps, n_units, 1)
-        :param distr_params_dict: dict of (n_pairs, n_params)
-        :param outlet_topo: (n_gages, n_units)
-        :param areas: (n_units,)
-        :return:
+    ) -> dict[str, torch.Tensor]:
+        """Route unit basin runoff to gages with a distributed unit hydrograph.
+
+        Parameters
+        ----------
+        Qs
+            Unit basin runoff, shape (nsteps, n_units, 1).
+        distr_params_dict
+            Dictionary of descaled distributed routing parameters, each of
+            shape (n_pairs, n_params).
+        outlet_topo
+            Gage-to-unit-basin incidence matrix, shape (n_gages, n_units).
+        areas
+            Unit basin areas, shape (n_units,).
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Dictionary with `Qs_rout`, the routed streamflow of shape
+            (nsteps, n_gages, 1).
         """
         device = areas.device
         nsteps = Qs.size(0)
@@ -796,15 +820,23 @@ class Hbv_2_hourly(BasePhysicsModel):
         return output
 
     @staticmethod
-    def _frac_shift1d(w, tau):
-        """
-        Differentiable fractional shift: return w(t - tau) by mixing k- and
-        (k+1)-step shifts.
+    def _frac_shift1d(w: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
+        """Differentiable fractional shift of a unit hydrograph.
 
-        For tau = k + f (0<=f<1): y[t] = (1-f)*w[t-k] + f*w[t-(k+1)].
+        Returns w(t - tau) by mixing the k- and (k+1)-step shifts. For
+        tau = k + f (0<=f<1): y[t] = (1-f)*w[t-k] + f*w[t-(k+1)].
 
-        w:   [T,B,V].
-        tau: [B,V]  (>=0 recommended).
+        Parameters
+        ----------
+        w
+            Unit hydrograph to shift, shape [T, B, V].
+        tau
+            Lag in timesteps, shape [B, V]. Non-negative values recommended.
+
+        Returns
+        -------
+        torch.Tensor
+            The shifted unit hydrograph, shape [T, B, V].
         """
         T, B, V = w.shape
         device, dtype = w.device, w.dtype
