@@ -103,14 +103,17 @@ def _hbv_2_hourly_config_dict(
     warmup_states=True,
     cache_states=False,
 ):
-    """Config dict for Hbv_2_hourly with 3 dynamic parameters."""
+    """Config dict for the hourly models with 3 dynamic parameters."""
     if dynamic_params is None:
         dynamic_params = ['parBETA', 'parK0', 'parBETAET']
     return {
         'warmup': warmup,
         'warmup_states': warmup_states,
         'dy_drop': 0.0,
-        'dynamic_params': {'Hbv_2_hourly': dynamic_params},
+        'dynamic_params': {
+            'Hbv_2_hourly': dynamic_params,
+            'Hbv_2_1_hourly': dynamic_params,
+        },
         'variables': ['prcp', 'tmean', 'pet'],
         'routing': routing,
         'comprout': False,
