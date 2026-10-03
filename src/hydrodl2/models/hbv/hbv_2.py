@@ -418,10 +418,22 @@ class Hbv_2(BasePhysicsModel):
         ----------
         forcing
             Input forcing data.
+        Ac
+            Catchment area per unit basin.
+        Elevation
+            Mean elevation per unit basin.
         states
             Initial model states.
-        full_param_dict
-            Dictionary of model parameters.
+        phy_dy_params_dict
+            Dictionary of descaled time-dynamic model parameters.
+        phy_static_params_dict
+            Dictionary of descaled time-invariant model parameters.
+        agg_info
+            Optional (areas, outlet_topo) for gage-level aggregation: unit
+            basin areas, shape (n_units,), and the unit-basin-to-gage
+            incidence matrix, shape (n_units, n_gages). When given, streamflow
+            and AET are area-weighted to gages inside the time loop and routed
+            at gage level, and only compact outputs are returned.
 
         Returns
         -------
@@ -699,7 +711,7 @@ class Hbv_2(BasePhysicsModel):
             UH = UH.permute([1, 2, 0])  # [gages,vars,time]
             Qsrout = uh_conv(rf, UH).permute([2, 0, 1])
 
-            if self.full_output:
+            if self.full_output and not _gage_agg:
                 # Routing individually for Q0, Q1, and Q2, all w/ dims [gages,vars,time].
                 rf_Q0 = Q0_sim.mean(-1, keepdim=True).permute([1, 2, 0])
                 Q0_rout = uh_conv(rf_Q0, UH).permute([2, 0, 1])
@@ -708,7 +720,7 @@ class Hbv_2(BasePhysicsModel):
                 rf_Q2 = Q2_sim.mean(-1, keepdim=True).permute([1, 2, 0])
                 Q2_rout = uh_conv(rf_Q2, UH).permute([2, 0, 1])
 
-            if self.comprout:
+            if self.comprout and not _gage_agg:
                 # Qs is now shape [time, [gages*num models], vars]
                 Qstemp = Qsrout.view(nsteps, ngrid, self.nmul)
                 if self.muwts is None:
@@ -732,8 +744,9 @@ class Hbv_2(BasePhysicsModel):
         else:
             states = None
 
-        if not self.full_output:
-            # Compact output: only streamflow and ET
+        if not self.full_output or _gage_agg:
+            # Compact output: only streamflow and ET (per-component outputs are
+            # not aggregated to gage level).
             flux_dict = {
                 'streamflow': Qs,
                 'AET_hydro': AET.unsqueeze(-1)
