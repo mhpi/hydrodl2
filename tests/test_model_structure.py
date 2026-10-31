@@ -26,7 +26,7 @@ from tests import DEVICE, _hbv_1_1p_config_dict, _hbv_2_config_dict, _hbv_config
 EXP_LEARNABLE_PARAMS = {
     'Hbv': {'total': 14},
     'Hbv_1_1p': {'total': 16},
-    'Hbv_2': {'total': 16, 'dynamic': 3, 'static': 13},
+    'Hbv_2': {'total': 18, 'dynamic': 3, 'static': 15},
 }
 
 _LEARNABLE_PARAM_CONFIGS = {
