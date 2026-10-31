@@ -205,9 +205,12 @@ class Hbv_2(BasePhysicsModel):
             self.routing_param_names = []
 
         self.learnable_param_count1 = len(self.dynamic_params) * self.nmul
+        # Always allocate ANN output nodes for routing params so that
+        # weights from routing-enabled checkpoints load cleanly even when
+        # routing is disabled at runtime (e.g. nextgen external routing).
         self.learnable_param_count2 = (
             len(self.phy_param_names) - len(self.dynamic_params)
-        ) * self.nmul + len(self.routing_param_names)
+        ) * self.nmul + len(self.routing_parameter_bounds)
         self.learnable_param_count = (
             self.learnable_param_count1 + self.learnable_param_count2
         )
