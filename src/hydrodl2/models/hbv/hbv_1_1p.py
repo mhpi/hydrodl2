@@ -239,22 +239,21 @@ class Hbv_1_1p(BasePhysicsModel):
 
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
-        for i, name in enumerate(self.parameter_bounds.keys()):
-            # NOTE:expand() instead of repeat() saves mem
-            staPar = phy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
+        for i, (name, bounds) in enumerate(self.parameter_bounds.items()):
+            # NOTE: Scale before expand() so the backward pass sums a static
+            # parameter's gradient over time and then scales it. The reverse
+            # order rounds differently. expand() also saves mem.
+            staPar = (
+                change_param_range(param=phy_params[-1, :, i, :], bounds=bounds)
+                .unsqueeze(0)
+                .expand(nsteps, -1, -1)
+            )
             if name in dy_list:
-                dynPar = phy_params[:, :, i, :]
+                dynPar = change_param_range(param=phy_params[:, :, i, :], bounds=bounds)
                 drmask = torch.bernoulli(pmat).detach_().to(self.device)
-                comPar = dynPar * (1 - drmask) + staPar * drmask
-                param_dict[name] = change_param_range(
-                    param=comPar,
-                    bounds=self.parameter_bounds[name],
-                )
+                param_dict[name] = dynPar * (1 - drmask) + staPar * drmask
             else:
-                param_dict[name] = change_param_range(
-                    param=staPar,
-                    bounds=self.parameter_bounds[name],
-                )
+                param_dict[name] = staPar
         return param_dict
 
     def forward(
@@ -307,7 +306,7 @@ class Hbv_1_1p(BasePhysicsModel):
             with torch.no_grad():
                 phy_param_warmup_dict = self._descale_phy_parameters(
                     phy_params[:warmup, :, :],
-                    dy_list=self.dynamic_params,
+                    dy_list=[],
                 )
                 # 1. Save current model settings
                 init_flag, route_flag = self.initialize, self.routing
@@ -449,7 +448,14 @@ class Hbv_1_1p(BasePhysicsModel):
             soil_wetness = torch.clamp(soil_wetness, min=0.0, max=1.0)
             recharge = (RAIN + tosoil) * soil_wetness
 
-            SM = SM + RAIN + tosoil - recharge
+            # NOTE: The dHBV 1.1p source code has an ordering error in its warmup
+            # model (HBVMulET_1_1p in dPLHBVrelease, HydroModels/HBV1_1p.py): water
+            # is added to SM after excess and ET, while its main model (HBV) adds
+            # it before. Excess and ET on a warmup day therefore miss that day's
+            # rain and melt. The error is kept here, in warmup only, so that
+            # warmed-up states match the source exactly.
+            if not self.initialize:
+                SM = SM + RAIN + tosoil - recharge
 
             excess = SM - param_dict['parFC']
             excess = torch.clamp(excess, min=0.0)
@@ -462,6 +468,10 @@ class Hbv_1_1p(BasePhysicsModel):
             ETact = PETm[t, :, :] * evapfactor
             ETact = torch.min(SM, ETact)
             SM = torch.clamp(SM - ETact, min=self.nearzero)
+
+            # NOTE: See the warmup ordering error noted above.
+            if self.initialize:
+                SM = SM + RAIN + tosoil - recharge
 
             # Capillary rise (HBV 1.1p mod) -------------------------------
             capillary = torch.min(
@@ -588,8 +598,11 @@ class Hbv_1_1p(BasePhysicsModel):
 
         else:
             # No routing, only output the average of all model sims.
+            Qsim = Qsimavg
             Qs = torch.unsqueeze(Qsimavg, -1)
-            Q0_rout = Q1_rout = Q2_rout = None
+            Q0_rout = Q0_sim.mean(-1, keepdim=True)
+            Q1_rout = Q1_sim.mean(-1, keepdim=True)
+            Q2_rout = Q2_sim.mean(-1, keepdim=True)
             self._routing_state_cache = None
 
         states = (SNOWPACK, MELTWATER, SM, SUZ, SLZ)
