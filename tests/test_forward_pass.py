@@ -6,14 +6,25 @@ Coverage:
 - Output tensor shapes (streamflow, BFI)
 - Output validity (finite values)
 - Forward-pass determinism
+- Forward pass with routing disabled
 
 NOTE: Tests are parametrized over Hbv, Hbv_1_1p, Hbv_2, and Hbv_2_hourly
 via the model_setup and simple_model_setup fixtures.
 """
 
+import pytest
 import torch
 
-from tests import NGRID, NSTEPS
+from hydrodl2 import load_model
+from tests import (
+    DEVICE,
+    NGRID,
+    NSTEPS,
+    SEED,
+    _hbv_1_1p_config_dict,
+    _hbv_config_dict,
+    make_hbv_inputs,
+)
 
 
 class TestForwardPass:
@@ -77,3 +88,27 @@ class TestForwardPass:
             assert torch.allclose(result1[key], result2[key], atol=1e-6), (
                 f"Non-deterministic output for '{key}'"
             )
+
+
+class TestNoRouting:
+    """Verify the forward pass with routing disabled."""
+
+    @pytest.mark.parametrize(
+        ('name', 'build_config'),
+        [('hbv', _hbv_config_dict), ('hbv_1_1p', _hbv_1_1p_config_dict)],
+    )
+    def test_matches_unrouted_outputs(self, name, build_config):
+        """Disabling routing gives the routed model's unrouted outputs."""
+        torch.manual_seed(SEED)
+        cls = load_model(name)
+        routed = cls(build_config(routing=True, warmup=5), device=DEVICE)
+        unrouted = cls(build_config(routing=False, warmup=5), device=DEVICE)
+        x_dict, params = make_hbv_inputs(routed)
+
+        expected = routed(x_dict, params)
+        result = unrouted(x_dict, params[:, :, : unrouted.learnable_param_count])
+
+        for key in ['streamflow', 'srflow', 'ssflow', 'gwflow']:
+            torch.testing.assert_close(result[key], expected[f"{key}_no_rout"])
+        assert result['BFI'].shape == (NGRID,)
+        assert torch.isfinite(result['BFI']).all()

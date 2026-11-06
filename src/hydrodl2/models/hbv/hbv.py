@@ -238,22 +238,21 @@ class Hbv(BasePhysicsModel):
 
         param_dict = {}
         pmat = torch.ones([1, ngrid, 1]) * self.dy_drop
-        for i, name in enumerate(self.parameter_bounds.keys()):
-            # NOTE:expand() instead of repeat() saves mem
-            staPar = phy_params[-1, :, i, :].unsqueeze(0).expand(nsteps, -1, -1)
+        for i, (name, bounds) in enumerate(self.parameter_bounds.items()):
+            # NOTE: Scale before expand() so the backward pass sums a static
+            # parameter's gradient over time and then scales it, as in the source
+            # code. The reverse order rounds differently. expand() also saves mem.
+            staPar = (
+                change_param_range(param=phy_params[-1, :, i, :], bounds=bounds)
+                .unsqueeze(0)
+                .expand(nsteps, -1, -1)
+            )
             if name in dy_list:
-                dynPar = phy_params[:, :, i, :]
+                dynPar = change_param_range(param=phy_params[:, :, i, :], bounds=bounds)
                 drmask = torch.bernoulli(pmat).detach_().to(self.device)
-                comPar = dynPar * (1 - drmask) + staPar * drmask
-                param_dict[name] = change_param_range(
-                    param=comPar,
-                    bounds=self.parameter_bounds[name],
-                )
+                param_dict[name] = dynPar * (1 - drmask) + staPar * drmask
             else:
-                param_dict[name] = change_param_range(
-                    param=staPar,
-                    bounds=self.parameter_bounds[name],
-                )
+                param_dict[name] = staPar
         return param_dict
 
     def forward(
@@ -574,8 +573,11 @@ class Hbv(BasePhysicsModel):
 
         else:
             # No routing, only output the average of all model sims.
+            Qsim = Qsimavg
             Qs = torch.unsqueeze(Qsimavg, -1)
-            Q0_rout = Q1_rout = Q2_rout = None
+            Q0_rout = Q0_sim.mean(-1, keepdim=True)
+            Q1_rout = Q1_sim.mean(-1, keepdim=True)
+            Q2_rout = Q2_sim.mean(-1, keepdim=True)
             self._routing_state_cache = None
 
         states = (SNOWPACK, MELTWATER, SM, SUZ, SLZ)
