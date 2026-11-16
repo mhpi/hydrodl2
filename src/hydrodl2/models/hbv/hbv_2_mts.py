@@ -158,6 +158,68 @@ class Hbv_2_mts(torch.nn.Module):
             # Only sideload low-frequency states.
             self.lof_model.load_states(state_tuple[0])
 
+    def get_runtime_state(self) -> dict[str, Any]:
+        """Snapshot everything stepwise inference carries between calls.
+
+        Covers the physics states of both submodels and the flags that select
+        how the next forward pass gets its initial states. Together with the
+        neural network's runtime state, this is enough to resume stepwise
+        inference exactly where it left off (e.g., NextGen hot start).
+
+        Returns
+        -------
+        dict[str, Any]
+            References to the cached states. Serialize or clone them before
+            model runs again.
+        """
+        hif_cache = None
+        if self._state_cache[1] is not None:
+            hif_cache = self.states[1]
+        return {
+            'states': self.states,
+            'state_cache': (self._state_cache[0], hif_cache),
+            'lof_model_states': self.lof_model.states,
+            'use_from_cache': self.use_from_cache,
+            'lof_rollout': self.lof_rollout,
+        }
+
+    def load_runtime_state(self, state: dict[str, Any]) -> None:
+        """Restore a snapshot taken by 'get_runtime_state'.
+
+        Parameters
+        ----------
+        state
+            Snapshot returned by 'get_runtime_state'.
+        """
+        expected = {
+            'states',
+            'state_cache',
+            'lof_model_states',
+            'use_from_cache',
+            'lof_rollout',
+        }
+        if set(state) != expected:
+            raise ValueError(
+                f"Runtime state keys {sorted(state)} do not match the expected "
+                f"keys {sorted(expected)}.",
+            )
+
+        def to_device(value: Any) -> Any:
+            if value is None:
+                return None
+            if isinstance(value, torch.Tensor):
+                return value.detach().to(self.device)
+            return tuple(to_device(v) for v in value)
+
+        self.states = to_device(state['states'])
+        self._state_cache = list(to_device(state['state_cache']))
+        self.lof_model.states = to_device(state['lof_model_states'])
+        self.use_from_cache = bool(state['use_from_cache'])
+        self.lof_rollout = bool(state['lof_rollout'])
+
+        # Keyed by parameter tensor identity, which a restore replaces.
+        self._static_param_cache = None
+
     def warmup_lof(
         self,
         x_dict: dict[str, torch.Tensor],
