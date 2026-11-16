@@ -323,6 +323,45 @@ class Hbv_2(BasePhysicsModel):
             )
         return parameter_dict
 
+    def get_runtime_state(self) -> dict[str, Any]:
+        """Snapshot everything stepwise inference carries between calls.
+
+        With 'cache_states' on, each forward pass starts from the last-step
+        states of the previous one. Together with the neural network's runtime
+        state, this is enough to resume stepwise inference exactly where it
+        left off (e.g., a NextGen hot start).
+
+        Returns
+        -------
+        dict[str, Any]
+            {'states': ...}, a reference to the cached last-step
+            states, each of shape [ngrid, nmul], or None before the first
+            forward pass.
+        """
+        return {'states': self.states}
+
+    def load_runtime_state(self, state: dict[str, Any]) -> None:
+        """Restore a snapshot taken by 'get_runtime_state'.
+
+        Parameters
+        ----------
+        state
+            Snapshot returned by 'get_runtime_state'.
+        """
+        if set(state) != {'states'}:
+            raise ValueError(
+                f"Runtime state keys {sorted(state)} do not match the expected "
+                "keys ['states'].",
+            )
+        states = state['states']
+        self.states = (
+            None
+            if states is None
+            else tuple(s.detach().to(self.device) for s in states)
+        )
+        # Full series from the last forward pass; not read by the next one.
+        self._state_cache = None
+
     def forward(
         self,
         x_dict: dict[str, torch.Tensor],
